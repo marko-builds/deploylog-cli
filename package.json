@@ -1,0 +1,26 @@
+{
+  "name": "deploylog-cli",
+  "version": "0.1.0",
+  "description": "CLI tool for DeployLog — push changelog entries from the terminal",
+  "type": "module",
+  "bin": {
+    "deploylog": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "keywords": ["changelog", "deploylog", "cli", "release-notes"],
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "conf": "^13.1.0",
+    "yaml": "^2.7.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3"
+  }
+}
