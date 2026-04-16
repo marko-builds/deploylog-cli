@@ -82,3 +82,42 @@ export async function createEntry(projectSlug: string, input: CreateEntryInput):
     body: JSON.stringify(input),
   })
 }
+
+// ─── AI summarization ───────────────────────────────────────────────────────
+
+export interface SummarizeInput {
+  project_slug?: string
+  commits?: string[]
+  release_notes?: string
+  version?: string
+}
+
+export type EntryType =
+  | 'feature'
+  | 'fix'
+  | 'improvement'
+  | 'breaking'
+  | 'announcement'
+
+export interface AiSummary {
+  title: string
+  entry_type: EntryType
+  body_markdown: string
+}
+
+export interface SummarizeResponse {
+  summary: AiSummary
+  model: string
+  usage: {
+    used: number
+    limit: number | null
+    month_key: string
+  }
+}
+
+export async function summarize(input: SummarizeInput): Promise<SummarizeResponse> {
+  return request('/ai-summarize', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}

@@ -1,19 +1,29 @@
 {
   "name": "deploylog",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Push changelog entries from the terminal",
   "type": "module",
   "bin": {
     "deploylog": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "prepublishOnly": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
-  "keywords": ["changelog", "deploylog", "cli", "release-notes", "devtools"],
+  "keywords": [
+    "changelog",
+    "deploylog",
+    "cli",
+    "release-notes",
+    "devtools"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -28,6 +38,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.4"
   }
 }

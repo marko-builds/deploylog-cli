@@ -3,15 +3,31 @@
 import { Command } from 'commander'
 import chalk from 'chalk'
 import { setApiKey, getApiKey, setApiUrl, getConfigPath, clearConfig } from './config.js'
-import { listProjects, listEntries, createEntry, ApiError } from './api.js'
+import {
+  listProjects,
+  listEntries,
+  createEntry,
+  summarize,
+  ApiError,
+  type AiSummary,
+} from './api.js'
 import { readProjectConfig } from './project-config.js'
+import {
+  isGitRepo,
+  getLastTag,
+  getHeadVersion,
+  getCommitsSince,
+  defaultTitleFromGit,
+  formatCommitsAsMarkdown,
+  type CommitSummary,
+} from './git.js'
 
 const program = new Command()
 
 program
   .name('deploylog')
   .description('Push changelog entries from the terminal')
-  .version('0.1.0')
+  .version('0.2.0')
 
 // ─── login ──────────────────────────────────────────────────────────────────
 
@@ -129,31 +145,115 @@ program
 program
   .command('push')
   .description('Create a new changelog entry')
-  .requiredOption('-t, --title <title>', 'Entry title')
-  .requiredOption('-b, --body <markdown>', 'Entry body (Markdown)')
+  .option('-t, --title <title>', 'Entry title (required unless --from-git or --ai-summarize)')
+  .option('-b, --body <markdown>', 'Entry body (Markdown)')
   .option('-p, --project <slug>', 'Project slug (or set in .deploylog.yml)')
   .option('--type <type>', 'Entry type: feature, fix, improvement, breaking, announcement')
   .option('--version <version>', 'Semver version (e.g. 1.2.3)')
   .option('--publish', 'Publish immediately (default: draft)')
   .option('--draft', 'Save as draft (default)')
+  .option('--from-git', 'Derive title/body from commits since the last tag')
+  .option('--ai-summarize', 'Rewrite the entry with Claude Haiku (user-friendly release notes)')
+  .option('-y, --yes', 'Skip interactive confirmation for AI-generated content')
   .action(async (opts: {
-    title: string
-    body: string
+    title?: string
+    body?: string
     project?: string
     type?: string
     version?: string
     publish?: boolean
     draft?: boolean
+    fromGit?: boolean
+    aiSummarize?: boolean
+    yes?: boolean
   }) => {
     try {
       const slug = resolveProject(opts.project)
       const projectConfig = readProjectConfig()
 
+      // Gather source material (commits + version) if --from-git.
+      let commits: CommitSummary[] = []
+      let gitVersion: string | null = null
+      let gitTitle: string | null = null
+      let gitBody: string | null = null
+
+      if (opts.fromGit) {
+        if (!isGitRepo()) {
+          console.error(chalk.red('Not in a git repository. Remove --from-git or cd to a repo.'))
+          process.exit(1)
+        }
+        const lastTag = getLastTag()
+        commits = getCommitsSince(lastTag)
+        gitVersion = getHeadVersion()
+        gitTitle = defaultTitleFromGit(gitVersion, lastTag)
+        gitBody = formatCommitsAsMarkdown(commits)
+
+        if (commits.length === 0 && !opts.body && !opts.aiSummarize) {
+          console.error(
+            chalk.yellow(
+              lastTag
+                ? `No commits since tag ${lastTag}. Nothing to summarize.`
+                : 'No commits found on HEAD.',
+            ),
+          )
+          process.exit(1)
+        }
+      }
+
+      // Build the entry (with optional AI rewrite).
+      let title = opts.title ?? gitTitle ?? ''
+      let body = opts.body ?? gitBody ?? ''
+      let entryType = opts.type ?? projectConfig?.default_type ?? null
+      const version = opts.version ?? gitVersion ?? undefined
+
+      if (opts.aiSummarize) {
+        const hasSource = commits.length > 0 || (opts.body && opts.body.trim().length > 0)
+        if (!hasSource) {
+          console.error(
+            chalk.red(
+              '--ai-summarize needs source material. Pass --from-git or provide --body as raw notes.',
+            ),
+          )
+          process.exit(1)
+        }
+
+        process.stdout.write(chalk.dim('Summarizing with Claude Haiku... '))
+        const res = await summarize({
+          project_slug: slug,
+          commits: commits.map((c) => c.subject),
+          release_notes: opts.body,
+          version,
+        })
+        process.stdout.write(chalk.green('done\n'))
+
+        title = opts.title ?? res.summary.title
+        body = res.summary.body_markdown
+        entryType = opts.type ?? res.summary.entry_type
+        printAiPreview(res.summary, res.usage)
+
+        if (!opts.yes && process.stdin.isTTY) {
+          const ok = await confirm('Publish this entry?')
+          if (!ok) {
+            console.log(chalk.yellow('Cancelled. No entry was created.'))
+            return
+          }
+        }
+      }
+
+      if (!title || !body) {
+        console.error(
+          chalk.red(
+            'Entry requires --title and --body (or --from-git / --ai-summarize to derive them).',
+          ),
+        )
+        process.exit(1)
+      }
+
       const entry = await createEntry(slug, {
-        title: opts.title,
-        body_markdown: opts.body,
-        entry_type: opts.type ?? projectConfig?.default_type ?? null,
-        version: opts.version,
+        title,
+        body_markdown: body,
+        entry_type: entryType,
+        version,
         publish: opts.publish && !opts.draft,
       })
 
@@ -171,6 +271,33 @@ program
   })
 
 // ─── helpers ────────────────────────────────────────────────────────────────
+
+function printAiPreview(
+  summary: AiSummary,
+  usage: { used: number; limit: number | null; month_key: string },
+): void {
+  console.log()
+  console.log(chalk.bold('AI-generated entry:'))
+  console.log(`  ${chalk.dim('Title:')}  ${summary.title}`)
+  console.log(`  ${chalk.dim('Type:')}   ${summary.entry_type}`)
+  console.log(chalk.dim('  Body:'))
+  for (const line of summary.body_markdown.split('\n')) {
+    console.log(`    ${line}`)
+  }
+  const limitLabel = usage.limit === null ? '∞' : String(usage.limit)
+  console.log(chalk.dim(`  Usage:  ${usage.used}/${limitLabel} this month (${usage.month_key})`))
+  console.log()
+}
+
+async function confirm(question: string): Promise<boolean> {
+  const { createInterface } = await import('node:readline')
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  const answer = await new Promise<string>((resolve) => {
+    rl.question(`${question} [y/N] `, resolve)
+  })
+  rl.close()
+  return /^y(es)?$/i.test(answer.trim())
+}
 
 function resolveProject(cliArg?: string): string {
   if (cliArg) return cliArg
