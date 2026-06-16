@@ -28,17 +28,36 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     },
   })
 
-  const json = await res.json()
+  // Read the body as text first and parse defensively: proxies/CDNs return
+  // non-JSON (HTML 502/504, empty 429) on outages, and `res.json()` would throw
+  // an opaque SyntaxError instead of a useful status. (BUG-011)
+  interface ApiResponse {
+    data?: T
+    error?: { code?: string; message?: string }
+  }
+  const raw = await res.text()
+  let body: ApiResponse | null = null
+  if (raw) {
+    try {
+      body = JSON.parse(raw) as ApiResponse
+    } catch {
+      body = null
+    }
+  }
 
   if (!res.ok) {
     throw new ApiError(
       res.status,
-      json.error?.code ?? 'UNKNOWN',
-      json.error?.message ?? `Request failed (${res.status})`,
+      body?.error?.code ?? 'UNKNOWN',
+      body?.error?.message ?? `Request failed (${res.status})`,
     )
   }
 
-  return json.data as T
+  if (!body) {
+    throw new ApiError(res.status, 'INVALID_RESPONSE', `Server returned a non-JSON response (${res.status})`)
+  }
+
+  return body.data as T
 }
 
 export interface Project {

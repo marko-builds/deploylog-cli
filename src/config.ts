@@ -22,11 +22,13 @@ export function setApiKey(key: string): void {
 }
 
 export function getApiUrl(): string {
-  return config.get('apiUrl') ?? 'https://deploylog.dev'
+  return (config.get('apiUrl') ?? 'https://deploylog.dev').replace(/\/+$/, '')
 }
 
 export function setApiUrl(url: string): void {
-  config.set('apiUrl', url)
+  // Normalize so request building (`${apiUrl}/api/cli${path}`) never produces a
+  // double slash from a trailing-slash paste. (BUG-012)
+  config.set('apiUrl', url.trim().replace(/\/+$/, ''))
 }
 
 export function clearConfig(): void {

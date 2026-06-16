@@ -2,7 +2,7 @@
 
 import { Command } from 'commander'
 import chalk from 'chalk'
-import { setApiKey, getApiKey, setApiUrl, getConfigPath, clearConfig } from './config.js'
+import { setApiKey, setApiUrl, getConfigPath, clearConfig } from './config.js'
 import {
   listProjects,
   listEntries,
@@ -38,6 +38,10 @@ program
   .option('--api-url <url>', 'API base URL (default: https://deploylog.dev)')
   .action(async (opts: { key?: string; apiUrl?: string }) => {
     if (opts.apiUrl) {
+      if (!/^https?:\/\//i.test(opts.apiUrl.trim())) {
+        console.error(chalk.red('Invalid API URL. Must start with http:// or https://'))
+        process.exit(1)
+      }
       setApiUrl(opts.apiUrl)
     }
 
@@ -237,6 +241,14 @@ program
             console.log(chalk.yellow('Cancelled. No entry was created.'))
             return
           }
+        } else if (!opts.yes) {
+          // Non-interactive shell (CI, piped stdin): there's no prompt to show,
+          // so make the unreviewed auto-proceed explicit. (BUG-019)
+          console.log(
+            chalk.yellow(
+              'Non-interactive shell: proceeding with the AI-generated entry without confirmation.',
+            ),
+          )
         }
       }
 
@@ -247,6 +259,10 @@ program
           ),
         )
         process.exit(1)
+      }
+
+      if (opts.publish && opts.draft) {
+        console.log(chalk.yellow('Both --publish and --draft passed; saving as a draft.'))
       }
 
       const entry = await createEntry(slug, {
