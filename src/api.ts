@@ -53,11 +53,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     )
   }
 
-  if (!body) {
-    throw new ApiError(res.status, 'INVALID_RESPONSE', `Server returned a non-JSON response (${res.status})`)
+  // Reject non-JSON bodies and well-formed JSON that's missing `data` — both
+  // violate the response contract and would otherwise return undefined.
+  if (!body || body.data === undefined) {
+    throw new ApiError(res.status, 'INVALID_RESPONSE', `Server returned an unexpected response (${res.status})`)
   }
 
-  return body.data as T
+  return body.data
 }
 
 export interface Project {

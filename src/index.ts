@@ -38,8 +38,17 @@ program
   .option('--api-url <url>', 'API base URL (default: https://deploylog.dev)')
   .action(async (opts: { key?: string; apiUrl?: string }) => {
     if (opts.apiUrl) {
-      if (!/^https?:\/\//i.test(opts.apiUrl.trim())) {
-        console.error(chalk.red('Invalid API URL. Must start with http:// or https://'))
+      let parsed: URL
+      try {
+        parsed = new URL(opts.apiUrl.trim())
+      } catch {
+        console.error(chalk.red('Invalid API URL. Provide a valid absolute URL.'))
+        process.exit(1)
+      }
+      // Require http(s) and a real host — a scheme-only value like "https://"
+      // parses but would break request URL construction.
+      if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname) {
+        console.error(chalk.red('Invalid API URL. Must use http(s) and include a host.'))
         process.exit(1)
       }
       setApiUrl(opts.apiUrl)
