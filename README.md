@@ -125,13 +125,13 @@ Uses Claude Haiku to rewrite your raw commits into user-friendly release notes. 
 
 For CI workflows, prefer the official Action:
 
-- [`deploylogdev/action`](https://github.com/marketplace/actions/deploylog) on the GitHub Marketplace
+- [`deploylogdev/action`](https://github.com/marketplace/actions/publish-to-deploylog) on the GitHub Marketplace
 
 ## Related
 
 - **Dashboard** — [deploylog.dev](https://deploylog.dev)
 - **Widget** — embeddable changelog widget at `cdn.deploylog.dev`
-- **GitHub Action** — [`deploylogdev/action@v1`](https://github.com/marketplace/actions/deploylog)
+- **GitHub Action** — [`deploylogdev/action@v1`](https://github.com/marketplace/actions/publish-to-deploylog)
 
 ## License
 
