@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Idzuo32/deploylog-cli/main/.github/assets/logo.png" width="120" alt="DeployLog" />
+  <img src="https://raw.githubusercontent.com/marko-builds/deploylog-cli/main/.github/assets/logo.png" width="120" alt="DeployLog" />
 </p>
 
 <h1 align="center">deploylog</h1>

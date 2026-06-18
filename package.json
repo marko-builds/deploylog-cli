@@ -27,7 +27,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Idzuo32/deploylog-cli.git"
+    "url": "https://github.com/marko-builds/deploylog-cli.git"
   },
   "homepage": "https://deploylog.dev",
   "dependencies": {
