@@ -27,7 +27,7 @@ const program = new Command()
 program
   .name('deploylog')
   .description('Push changelog entries from the terminal')
-  .version('0.2.0')
+  .version('0.2.2')
 
 // ─── login ──────────────────────────────────────────────────────────────────
 
