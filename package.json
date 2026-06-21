@@ -1,6 +1,6 @@
 {
   "name": "deploylog",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Push changelog entries from the terminal",
   "type": "module",
   "bin": {
