@@ -23,7 +23,7 @@
 npm i -g deploylog
 ```
 
-Node 18+ required.
+Node 18+ required. Installs two equivalent commands: `deploylog` and the short alias `dpl`.
 
 ## Authenticate
 
@@ -98,8 +98,8 @@ Create a new changelog entry.
 --version <version>       Semver (e.g. 1.2.3)
 --publish                 Publish immediately
 --draft                   Save as draft (default)
---from-git                Derive title/body from commits since the last tag
---ai-summarize            Rewrite the entry with Claude Haiku
+-g, --from-git            Derive title/body from commits since the last tag (alias: --git)
+-a, --ai-summarize        Rewrite the entry with Claude Haiku (alias: --ai)
 -y, --yes                 Skip interactive confirmation for AI-generated content
 ```
 
@@ -117,6 +117,8 @@ Collects commits since the last git tag, formats them as a Markdown list, and op
 
 ```bash
 deploylog push --from-git --ai-summarize --version 1.4.0 --publish
+# or, with short flags and the dpl alias:
+dpl push -g -a --version 1.4.0 --publish
 ```
 
 Uses Claude Haiku to rewrite your raw commits into user-friendly release notes. Free plan includes 5 AI summaries per month; paid plans are unlimited.

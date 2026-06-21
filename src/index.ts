@@ -165,8 +165,10 @@ program
   .option('--version <version>', 'Semver version (e.g. 1.2.3)')
   .option('--publish', 'Publish immediately (default: draft)')
   .option('--draft', 'Save as draft (default)')
-  .option('--from-git', 'Derive title/body from commits since the last tag')
-  .option('--ai-summarize', 'Rewrite the entry with Claude Haiku (user-friendly release notes)')
+  .option('-g, --from-git', 'Derive title/body from commits since the last tag')
+  .option('--git', 'Alias of --from-git')
+  .option('-a, --ai-summarize', 'Rewrite the entry with Claude Haiku (user-friendly release notes)')
+  .option('--ai', 'Alias of --ai-summarize')
   .option('-y, --yes', 'Skip interactive confirmation for AI-generated content')
   .action(async (opts: {
     title?: string
@@ -177,10 +179,16 @@ program
     publish?: boolean
     draft?: boolean
     fromGit?: boolean
+    git?: boolean
     aiSummarize?: boolean
+    ai?: boolean
     yes?: boolean
   }) => {
     try {
+      // Reconcile each flag with its alias (-g/--git, -a/--ai).
+      const fromGit = opts.fromGit || opts.git
+      const aiSummarize = opts.aiSummarize || opts.ai
+
       const slug = resolveProject(opts.project)
       const projectConfig = readProjectConfig()
 
@@ -190,7 +198,7 @@ program
       let gitTitle: string | null = null
       let gitBody: string | null = null
 
-      if (opts.fromGit) {
+      if (fromGit) {
         if (!isGitRepo()) {
           console.error(chalk.red('Not in a git repository. Remove --from-git or cd to a repo.'))
           process.exit(1)
@@ -201,7 +209,7 @@ program
         gitTitle = defaultTitleFromGit(gitVersion, lastTag)
         gitBody = formatCommitsAsMarkdown(commits)
 
-        if (commits.length === 0 && !opts.body && !opts.aiSummarize) {
+        if (commits.length === 0 && !opts.body && !aiSummarize) {
           console.error(
             chalk.yellow(
               lastTag
@@ -219,7 +227,7 @@ program
       let entryType = opts.type ?? projectConfig?.default_type ?? null
       const version = opts.version ?? gitVersion ?? undefined
 
-      if (opts.aiSummarize) {
+      if (aiSummarize) {
         const hasSource = commits.length > 0 || (opts.body && opts.body.trim().length > 0)
         if (!hasSource) {
           console.error(
