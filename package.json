@@ -4,7 +4,8 @@
   "description": "Push changelog entries from the terminal",
   "type": "module",
   "bin": {
-    "deploylog": "./dist/index.js"
+    "deploylog": "./dist/index.js",
+    "dpl": "./dist/index.js"
   },
   "files": [
     "dist"
