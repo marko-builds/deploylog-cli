@@ -94,10 +94,10 @@ Create a new changelog entry.
 -t, --title <title>       Entry title
 -b, --body <markdown>     Entry body (Markdown)
 -p, --project <slug>      Project slug (or set in .deploylog.yml)
---type <type>             feature | fix | improvement | breaking | announcement
+-T, --type <type>         feature | fix | improvement | breaking | announcement
 --version <version>       Semver (e.g. 1.2.3)
---publish                 Publish immediately
---draft                   Save as draft (default)
+-P, --publish             Publish immediately
+-D, --draft               Save as draft (default)
 -g, --from-git            Derive title/body from commits since the last tag (alias: --git)
 -a, --ai-summarize        Rewrite the entry with Claude Haiku (alias: --ai)
 -y, --yes                 Skip interactive confirmation for AI-generated content

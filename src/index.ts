@@ -27,7 +27,7 @@ const program = new Command()
 program
   .name('deploylog')
   .description('Push changelog entries from the terminal')
-  .version('0.2.2')
+  .version('0.3.0')
 
 // ─── login ──────────────────────────────────────────────────────────────────
 
@@ -161,10 +161,10 @@ program
   .option('-t, --title <title>', 'Entry title (required unless --from-git or --ai-summarize)')
   .option('-b, --body <markdown>', 'Entry body (Markdown)')
   .option('-p, --project <slug>', 'Project slug (or set in .deploylog.yml)')
-  .option('--type <type>', 'Entry type: feature, fix, improvement, breaking, announcement')
+  .option('-T, --type <type>', 'Entry type: feature, fix, improvement, breaking, announcement')
   .option('--version <version>', 'Semver version (e.g. 1.2.3)')
-  .option('--publish', 'Publish immediately (default: draft)')
-  .option('--draft', 'Save as draft (default)')
+  .option('-P, --publish', 'Publish immediately (default: draft)')
+  .option('-D, --draft', 'Save as draft (default)')
   .option('-g, --from-git', 'Derive title/body from commits since the last tag')
   .option('--git', 'Alias of --from-git')
   .option('-a, --ai-summarize', 'Rewrite the entry with Claude Haiku (user-friendly release notes)')
