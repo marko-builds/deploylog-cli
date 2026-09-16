@@ -1,0 +1,58 @@
+# 10 — `deploylog why`: rank a repo's issues, PR threads and commits against a question
+
+**Status:** queued (v1.2, Oct 20 to Nov 3 2026, beside issue 06) · **Type:** AFK · **Lane:** deploylog-cli
+**Parent:** monolith `decisions/log.md` 2026-09-16 (grilled with Marko from a friend's ask); `deploylog/docs/roadmap.md` v1.2 row
+**Blocked by:** the fixture corpus under `src/__fixtures__/why/` (a foreground capture with network, see "Before the AFK run"). Independent of issue 06's `api.ts` changes: this command never calls the DeployLog API.
+**Red-teamed:** 2026-09-16, `plan-review-redteamer`, verdict rework; two blocking findings and eleven risks folded in (record at the end).
+**Verification:** `vitest run` over an injected `WhyDeps` seam (source, git, fs, clock, token lookup, output sinks) with the checked-in fixture corpus; no network in tests, no real repo, no edit to this file by the AFK run. Known negative: a query made of one token with no prefix or fuzzy neighbour in the corpus (pick it against the fixture's term list) returns `kind: 'no-matches'`; this proves the refusal path is reachable, not ranking quality. Ranking quality has one check here (the planted-comment test below) and its real gate in issue 11 (the friend's three known-answer questions).
+
+## Why
+Programmers researching a repo they use but do not own (an old library whose authors argued in the PR threads) want "did anyone solve this, why is it like this" answered from the history, not from a fresh read of the code. Git log alone cannot answer it; the reasons live in issue and PR comments. GitHub's site search is keyword-only across the site, and its duplicate detection (public preview 2026-06-18) lives in the issue form, for maintainers. Nothing ranks one repo's threads against a question from the terminal, and the agent in the terminal (issue 06) has no tool for it. Retrieval only keeps it free and keyless; whoever reads the five results writes the answer.
+
+## Before the AFK run (foreground, once)
+1. Capture the fixture corpus: about 30 threads and 20 commits from one public repo whose threads hold a real argument, as the raw GraphQL page shapes plus a `git log` slice, under `src/__fixtures__/why/`. Author logins kept, no email addresses. Write `questions.json`: five questions with the expected thread number each, and one corpus-foreign token for the known negative (checked against the corpus term list).
+2. Pin `minisearch`: `npm view minisearch version dist.unpackedSize`, record both here.
+Both need network and judgment; neither is the AFK agent's.
+
+## What to build
+`deploylog why "<question>" [--repo owner/name] [--kinds issue,pr,commit] [--limit 5] [--max-threads 20000] [--refresh] [--json]`
+
+1. **Repo resolution.** `--repo` wins; else the origin slug from the cwd (`git.ts`); else the typed refusal `no-repo`.
+2. **Token.** `GITHUB_TOKEN` env, else `gh auth token` spawned through the deps seam (never assumed on PATH), else refuse `no-token` naming both ways to get one. The GraphQL endpoint rejects unauthenticated calls outright, so there is no anonymous mode. The token is never persisted by this command and never appears in any message: errors print only `errors[].type` and `errors[].message` from the response body, never request headers.
+3. **Fetch.** GitHub GraphQL: `repository.issues` and `repository.pullRequests` ordered by **`CREATED_AT` descending** (immutable ordering, so a cursor resumed after a pause skips nothing), 100 per page, `comments(first: 50)` nested; fields number, title, body, state, createdAt, updatedAt, url, author login, labels, comment body + author + date, `merged` / `mergedAt` on PRs, plus the top-level `rateLimit { remaining resetAt }` and `repository.nameWithOwner`. Cost is about 51 points per page per connection, so a 5k-thread repo spends most of the hourly 5000, and the budget is shared with everything else the user's token does; a run may exceed it, and resume handles that. Backfill newest-first up to `--max-threads` (default 20000; `0` = unlimited) with one progress line per page on stderr; when the cap cuts a repo, say so and how to lift it. On `RATE_LIMITED`, stop cleanly, print `remaining` and `resetAt`, keep what was fetched; the next run resumes from the stored cursor. Commits from the local clone when the cwd is the repo (`git.ts`); when it is not, skip commits and say so on stderr (v0).
+4. **Incremental refresh.** A later run fetches `UPDATED_AT` descending and stops at the first thread whose `updatedAt` is not later than the stored high-water mark, replacing threads by id. This ordering is used only for refresh, never for backfill.
+5. **Cache.** Host-neutral key `<host>/<path with "/" replaced by "__">` (`github/owner__repo`; a GitLab nested group becomes `gitlab/group__sub__repo`) under a platform cache dir: `XDG_CACHE_HOME` or `~/.cache` on Linux, `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows, then `deploylog/why/`; ten lines in a `cacheDir()` helper, no new dependency. Files `threads.jsonl`, `commits.jsonl`, `meta.json` (schema version, host, canonical `nameWithOwner`, backfill cursor, refresh high-water mark, `fetchedAt`, `rateLimit` last seen), directory `0700`, files `0600`: third-party and private comment bodies sit on disk in plain text and the mode is the only guard. When `nameWithOwner` differs from the slug requested (a transferred or renamed repo), say so and key the cache by the canonical name. `--refresh` drops the cache; a schema-version bump drops it too.
+6. **Thread shape.** One host-neutral type: `Thread { host, id (host-native id as a string), ref (display form, "#123" on GitHub, "!45" for a GitLab MR), kind: issue | pr, title, body, state: open | closed | merged, createdAt, updatedAt, url, author, labels, comments: [{ author, body, createdAt }] }`. `why.ts`, the cache and the output know only this type; `number` and `merged` live inside `GithubGraphqlSource`.
+7. **Index.** `minisearch`, a sixth runtime dependency: a conscious exception to the lane's five-dependency line (`CLAUDE.md:11`), taken for zero transitive dependencies and size, loaded lazily inside the `why` action; issue 06 adds the seventh the same way. Update `CLAUDE.md:11` in the surface PR. One document per thread and per commit; fields title, body, comments (joined), labels; BM25 with boosts title 3 and comments 1.5, prefix on, fuzzy 0.2. Built in memory from the cache on every run in v0; persisting the index is v1 if issue 11's measurement exceeds 2 s.
+8. **Output.** Top `limit` (default 5): kind badge (issue, PR, commit), `ref` or a 7-char sha, title, date, state, the best-matching excerpt (the body or comment window holding the most query terms, two lines), url. `--json`: `{ repo, query, results: [{ kind, ref, title, url, state, date, score, excerpt }] }` on stdout and nothing else; refusals as `{"error":{"code","message"}}` on stderr (convention 3).
+9. **Seam.** `HistorySource { host; resolveRepo(slug) → canonical; fetchThreads(page: { order: 'created' | 'updated', cursor? }); fetchCommits(...) }` with `GithubGraphqlSource` the only implementation. GitLab is the second in v1.3 (roadmap); `why.ts` imports no GitHub type.
+10. **Deps.** `WhyDeps { source, git, cacheDir, readFile, writeFile, chmod, now, lookupToken, out, err }`; `runWhy(opts, deps)` returns a kind-tagged union (`results | no-matches | no-repo | no-token | rate-limited | not-found | too-large`) per convention 2; `index.ts` maps kinds to messages and exit codes only.
+
+## Acceptance criteria
+- [ ] `runWhy` covered through fake deps: `no-repo`, `no-token`, `not-found` (a repo the token cannot read), first backfill, cap reached, rate-limit stop then resume from the stored cursor (the fake source asserts the cursor it receives), incremental refresh stops at the high-water mark and replaces by id, renamed repo re-keys the cache, `--refresh`, `--json`.
+- [ ] Ranking calibration against `questions.json`: each expected thread in the top five. The same test, run once more with `comments` removed from the index fields, must fail on at least one question, and the corpus is chosen so that it does (a check that cannot fail is not a check).
+- [ ] Planted-comment test: a thread whose only match sits inside a comment ranks first.
+- [ ] The known negative (`no-matches` on the recorded corpus-foreign token) passes.
+- [ ] A test asserts no error or stderr line ever contains the token (feed a fake token, grep every sink).
+- [ ] Cache files are written with mode `0600` and the directory `0700` (assert through the `chmod` seam).
+- [ ] `--json` mode writes nothing but the JSON to stdout.
+- [ ] README `## Commands` gains `why`; the chapter 05 regeneration is listed in the surface PR; `CLAUDE.md:11` updated for the dependency count.
+- [ ] `npm test` and `npm run build` pass; `minisearch` is imported only inside the `why` action.
+
+## Boundaries
+- No LLM call, no DeployLog API call, no account, no telemetry. Issue 11 hands the agent the tool; the answer is the agent's.
+- No embeddings in v0. A local embedding experiment only if issue 11's human gate fails on ranking.
+- No duplicate-issue detection mode (GitHub-native since 2026-06-18).
+- No "how to use it" or "how to change it" generation for a dependency: that is a Manual over a repo you do not own, recorded as an input on `deploylog/issues/map-manual-split/01`.
+- GitHub only. GitLab arrives in v1.3 through the `HistorySource` seam (roadmap). Do not add a GitLab server integration anywhere in the four repos.
+- Discussions, PR review threads (`reviewThreads`), diff bodies and DeployLog entries as sources are v1, after the human gate.
+- No measurement on a real repo inside this ticket; issue 11 owns the index-build timing and the 5k-repo run.
+- Does not touch `api.ts`, `config.ts` or the `conf` store.
+
+## Open before build
+- `gh auth token` fallback on Windows (spawn semantics); if unclear, env only in v0 and document it.
+- Whether GraphQL `repository(owner, name)` follows a rename; the `nameWithOwner` re-key handles either answer, but the docs line depends on it.
+- Comment cap: 50 per thread loses the tail of a 200-comment argument; issue 11's run on the friend's library decides whether to raise it.
+
+## Red-team record (2026-09-16)
+Verdict rework, all findings folded. Blocking: (1) three acceptance lines needed network, a real repo and an edit to this file, in a ticket typed AFK, so the fixture capture and the `minisearch` pin moved to a foreground "Before the AFK run" step and the measurement moved to issue 11; (2) a cursor resumed over `UPDATED_AT` skips threads that moved ahead of it during the pause, so backfill now orders by `CREATED_AT` and `UPDATED_AT` is used only for the refresh with a stop-at-high-water-mark. Risks folded: the under-limit claim replaced with the 51-points-per-page arithmetic and "resume handles it"; the known negative re-stated as reachability, with a token chosen against the term list; a `--max-threads` cap for huge repos and a persist-the-index v1 trigger; the host-neutral `Thread` type and cache key so v1.3 does not migrate the cache; the sixth dependency named as a conscious exception; platform cache dirs; `0600`/`0700` modes and a token-never-printed test; `rateLimit.remaining` surfaced; renamed repos re-keyed; the "60/hr anonymous" REST fact corrected. Cheaper path considered and declined: shelling out to `gh api graphql --paginate` would make `gh` a hard runtime dependency and break the `GITHUB_TOKEN`-only path (CI, hosts without `gh`); scoping v0 to recent threads would cut the exact use case (old arguments in old libraries). Issue 11's live "same ranked evidence" check was replaced by the frozen-cache determinism test.
