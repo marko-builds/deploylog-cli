@@ -171,6 +171,224 @@ describe('manual verify — exit code follows --fail-on', () => {
   })
 })
 
+describe('manual verify — the floor: a run that vouched for nothing', () => {
+  /**
+   * `confirmedCount` is drift, so "the run read claims and none of them held" has
+   * no count of its own on the wire. It is the exact arithmetic remainder —
+   * every evaluated claim is ok, drifted or unreadable — and issue 126 measured
+   * what happens without it: a production run reading none of 459 claims exited
+   * 0 for a month, on `--fail-on drift`, because the default covers drift only.
+   */
+  const unreadable = (claims: number) =>
+    cleanReport({
+      chapters: [
+        chapter({
+          state: 'ERROR',
+          errors: Array.from({ length: claims }, (_, i) => ({
+            claimId: `c${i}`,
+            text: 'A free organisation may create three projects.',
+            repository: REPO,
+            source: 'src/lib/limits.ts',
+            reason: 'unmapped_repository' as const,
+            detail: `${REPO} is not pinned in the commit map.`,
+          })),
+        }),
+      ],
+      confirmedCount: 0,
+      errorCount: claims,
+      evaluatedCount: claims,
+      unverifiable: true,
+    })
+
+  it('a run where every claim was unreadable exits non-zero under the DEFAULT fail-on', async () => {
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(unreadable(459)) } })
+    // No failOn passed at all: the default is the thing under test.
+    const result = await runManualVerify({ project: 'x' }, deps)
+    expect(result.kind).toBe('verified')
+    expect((result as { exitCode: number }).exitCode).not.toBe(0)
+    expect(stdoutText(deps)).toContain('vouched 0')
+  })
+
+  it('PINS TODAY\'S BEHAVIOUR: 408 of 459 claims unreadable still exits 0, because 51 held', async () => {
+    // The run that motivated issue 126 — `confirmed 0 / errors 408 / evaluated
+    // 459` — is NOT caught by this floor, and that is the whole open policy
+    // question. 51 claims held, so the run vouched for something, so it passes
+    // under `drift`; `--fail-on any` is what fails it. Asserted rather than left
+    // in a paragraph, so the day someone decides unreadable claims should fail
+    // by default, this arm is the one that goes red and says so.
+    const mostlyUnreadable = cleanReport({
+      confirmedCount: 0,
+      errorCount: 408,
+      evaluatedCount: 459,
+      unverifiable: true,
+    })
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(mostlyUnreadable) } })
+    const result = await runManualVerify({ project: 'x' }, deps)
+    expect((result as { exitCode: number }).exitCode).toBe(0)
+    expect(stdoutText(deps)).toContain('vouched 51')
+
+    const any = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(mostlyUnreadable) } })
+    const underAny = await runManualVerify({ project: 'x', failOn: 'any' }, any)
+    expect((underAny as { exitCode: number }).exitCode).not.toBe(0)
+  })
+
+  it('CONTROL: a manual whose claims all hold still exits 0', async () => {
+    // Without this arm the one above passes against a verifier that fails
+    // everything, which is the defect issue 126 is about, reintroduced.
+    const held = cleanReport({ evaluatedCount: 459 })
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(held) } })
+    const result = await runManualVerify({ project: 'x' }, deps)
+    expect((result as { exitCode: number }).exitCode).toBe(0)
+    expect(stdoutText(deps)).toContain('vouched 459')
+  })
+
+  it('CONTROL: one unreadable claim among readable ones still exits 0 under drift', async () => {
+    // The floor is "vouched for nothing", not "anything went wrong" — that is
+    // what `--fail-on any` is for, and widening the floor would swallow it.
+    const partial = cleanReport({ evaluatedCount: 459, errorCount: 1, unverifiable: true })
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(partial) } })
+    const result = await runManualVerify({ project: 'x', failOn: 'drift' }, deps)
+    expect((result as { exitCode: number }).exitCode).toBe(0)
+  })
+
+  it('vouching for nothing and finding drift keep their own exit codes', async () => {
+    const nothing = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(unreadable(3)) } })
+    const nothingRes = await runManualVerify({ project: 'x' }, nothing)
+    const drift = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(driftReport()) } })
+    const driftRes = await runManualVerify({ project: 'x' }, drift)
+    const a = (nothingRes as { exitCode: number }).exitCode
+    const b = (driftRes as { exitCode: number }).exitCode
+    expect(a).not.toBe(0)
+    expect(b).not.toBe(0)
+    expect(a).not.toBe(b)
+  })
+
+  it('drift wins the exit code when the run ALSO vouched for nothing', async () => {
+    // The dangerous ordering: a report with drift AND nothing held must not
+    // report exit 2, because "unverifiable" would hide the finding that has
+    // somewhere to go. Every claim here is drifted or unreadable, so vouched is
+    // 0 and both rules hold at once.
+    const both = cleanReport({
+      chapters: [
+        chapter({
+          state: 'CONFIRMED',
+          confirmed: [
+            {
+              claimId: 'c1',
+              text: 'A free organisation may create three projects.',
+              repository: REPO,
+              source: 'src/lib/limits.ts',
+              line: 12,
+              detail: 'FREE_PROJECT_LIMIT is now 5',
+            },
+          ],
+          errors: [
+            {
+              claimId: 'c2',
+              text: 'The CLI publishes on push.',
+              repository: REPO,
+              source: 'src/push.ts',
+              reason: 'unmapped_repository' as const,
+              detail: `${REPO} is not pinned in the commit map.`,
+            },
+          ],
+        }),
+      ],
+      confirmedCount: 1,
+      errorCount: 1,
+      evaluatedCount: 2,
+      unverifiable: true,
+    })
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(both) } })
+    const result = await runManualVerify({ project: 'x' }, deps)
+    expect((result as { exitCode: number }).exitCode).toBe(1)
+    expect(stdoutText(deps)).toContain('vouched 0')
+    expect(stdoutText(deps)).toContain('1 claim drifted')
+  })
+
+  it('names the floor in the failure line, not "no drift was found"', async () => {
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(unreadable(459)) } })
+    await runManualVerify({ project: 'x' }, deps)
+    expect(stdoutText(deps)).toContain('vouched for none of the 459 claims it read')
+  })
+
+  it('--fail-on none still exits 0, and says what it declined to fail on', async () => {
+    // `none` is the Action's documented first-run setting; the floor must not
+    // change the exit code of a build nobody asked this check to gate.
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(unreadable(459)) } })
+    const result = await runManualVerify({ project: 'x', failOn: 'none' }, deps)
+    expect((result as { exitCode: number }).exitCode).toBe(0)
+    expect(stdoutText(deps)).toContain('not one of the 459 claims it evaluated could be read')
+    // And it must not call itself green "because no claim drifted", which is the
+    // exact sentence this ticket quotes from the production run.
+    expect(stdoutText(deps)).not.toContain('green because no claim drifted')
+  })
+
+  it('an unverifiable flag with no count behind it still reaches the reader', async () => {
+    // `unverifiable` is the service's disjunction over four counts, so normally
+    // one of them says why. The field is documented as "deliberately coarse"
+    // and has been widened once, so a flag with no count must not be dropped.
+    const flagOnly = cleanReport({ unverifiable: true })
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(flagOnly) } })
+    await runManualVerify({ project: 'x' }, deps)
+    expect(stdoutText(deps)).toContain('the service reports this run as unverifiable')
+  })
+
+  it('a scoped run with one drifted claim reads as drift, not as "could not vouch"', async () => {
+    // The ordinary pull-request path, and the regression the first spelling of
+    // the floor introduced: `vouched <= 0` is also true when everything the run
+    // read DRIFTED, so a one-claim scoped run printed "could not vouch for the
+    // rest of the manual" and a "(unverifiable)" header over a payload whose
+    // own flag was false. Found drift and could not check must not collapse.
+    const scopedDrift = cleanReport({
+      chapters: [chapter({ state: 'CONFIRMED', confirmed: driftReport().chapters[0]!.confirmed })],
+      confirmedCount: 1,
+      errorCount: 0,
+      evaluatedCount: 1,
+      skippedCount: 458,
+      unverifiable: false,
+    })
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(scopedDrift) } })
+    const result = await runManualVerify({ project: 'x' }, deps)
+    const out = stdoutText(deps)
+    expect((result as { exitCode: number }).exitCode).toBe(1)
+    expect(out).toContain('1 claim no longer match')
+    expect(out).not.toContain('could not vouch')
+    expect(out).not.toContain('unverifiable')
+  })
+
+  it('does not call a report unverifiable when the payload says it is not', async () => {
+    // The parenthetical names a wire field, so it must not appear over a report
+    // whose field is false. Reachable through the self-contradicting counts.
+    const impossible = cleanReport({ evaluatedCount: 2, errorCount: 5, unverifiable: false })
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(impossible) } })
+    await runManualVerify({ project: 'x' }, deps)
+    const out = stdoutText(deps)
+    expect(out).toContain('could not vouch for the manual:')
+    expect(out).not.toContain('(unverifiable)')
+  })
+
+  it('a scoped run that evaluated nothing is not the floor (there was nothing to vouch for)', async () => {
+    // evaluatedCount 0 means the diff touched no cited file, which is the
+    // ordinary answer on most pull requests. Failing it would fail every one.
+    const none = cleanReport({ evaluatedCount: 0, skippedCount: 12 })
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(none) } })
+    const result = await runManualVerify({ project: 'x' }, deps)
+    expect((result as { exitCode: number }).exitCode).toBe(0)
+  })
+
+  it('counts that do not add up are their own non-zero outcome, never a pass', async () => {
+    // A negative remainder is impossible arithmetic: the report is not a report.
+    // Reading it as "nothing held" would be a guess; reading it as clean would
+    // be the false green this whole ticket is about.
+    const impossible = cleanReport({ evaluatedCount: 2, confirmedCount: 0, errorCount: 5 })
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(impossible) } })
+    const result = await runManualVerify({ project: 'x' }, deps)
+    expect((result as { exitCode: number }).exitCode).not.toBe(0)
+    expect(stdoutText(deps)).toContain('do not add up')
+  })
+})
+
 describe('manual verify — --changed-from scope', () => {
   it('sends the diffed paths when the diff is non-empty', async () => {
     const deps = makeDeps({

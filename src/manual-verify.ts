@@ -20,7 +20,13 @@ export type FailOn = (typeof FAIL_ON_VALUES)[number]
  */
 export const DEFAULT_FAIL_ON: FailOn = 'drift'
 
-/** Exit 1 is drift found; exit 2 is "could not vouch" under `any`. Never the same code. */
+/**
+ * Exit 1 is drift found; exit 2 is "could not vouch". Never the same code.
+ *
+ * Exit 2 reaches a run at `--fail-on any`, and — since issue 126 — at the
+ * default `drift` too when the run vouched for nothing at all. `EXIT_DRIFT`
+ * wins when both hold: drift is the finding with somewhere to go.
+ */
 export const EXIT_DRIFT = 1
 export const EXIT_UNVERIFIABLE = 2
 
@@ -44,6 +50,10 @@ export interface ManualVerifyOptions {
 export interface Verdict {
   /** Claims whose cited value moved. The only drift signal. */
   drift: number
+  /** Claims read and stood behind. Negative means the report contradicts itself. */
+  vouched: number
+  /** Every claim this run evaluated was unreadable. The floor, and not `vouched === 0`. */
+  readNothing: boolean
   /** Why this run cannot be called clean. Never folded into `drift`. */
   reasons: string[]
   exitCode: number
@@ -249,13 +259,75 @@ function flagFor(path: string): string {
 }
 
 /**
+ * Claims this run read and stood behind.
+ *
+ * Derived, because the wire has no count for it: `confirmedCount` is *drift*, so
+ * "read it and it holds" and "could not read it at all" both report
+ * `confirmed 0`, and the report's other counts are all about what went wrong.
+ * Every evaluated claim yields exactly one of ok, drift or error
+ * (`manual-verification.ts`'s `verifyChapter`), so the remainder is exact.
+ *
+ * Not added as a field on the response instead: both copies of
+ * `ManualVerifyResponseSchema` are `.strict()`, and this file's own test asserts
+ * that an extra top-level key is refused. A server that started sending one
+ * would break every installed CLI and the Action on parse, which is a worse
+ * failure than the one being fixed.
+ */
+function vouchedFor(report: ManualVerifyResponse): number {
+  return report.evaluatedCount - report.confirmedCount - report.errorCount
+}
+
+/**
+ * A run that read claims and learned nothing from any of them: every claim it
+ * evaluated was unreadable.
+ *
+ * Deliberately NOT `vouched <= 0`, which was the first spelling and was wrong.
+ * That is also true of a run where everything it read DRIFTED — a fully
+ * informative run — and it made an ordinary scoped pull request with one drifted
+ * claim print "could not vouch for the rest of the manual" over a report whose
+ * own `unverifiable` flag was false. "Found drift" and "could not check" must
+ * never collapse into each other; a predicate true of both causes is that
+ * collapse, wearing the floor's name.
+ *
+ * `evaluatedCount > 0` keeps this a floor rather than a nuisance: a scoped run
+ * whose diff touched no cited file evaluates nothing, on most pull requests, and
+ * there is nothing to vouch for. The `verifiedNothing` stderr line covers that.
+ */
+function readNothing(report: ManualVerifyResponse): boolean {
+  return report.evaluatedCount > 0 && report.errorCount >= report.evaluatedCount
+}
+
+/**
+ * The report contradicts itself: more claims drifted or errored than were
+ * evaluated. Defence in depth, not a live guard — the service cannot emit it,
+ * since every drifted and unreadable claim is one evaluated claim — but the
+ * response schema does not cross-validate the counts, so such a report parses.
+ * Reading it as "nothing held" would be a guess; reading it as clean would be
+ * this ticket's own defect.
+ */
+function countsContradict(report: ManualVerifyResponse): boolean {
+  return vouchedFor(report) < 0
+}
+
+/**
  * Counts to exit status. `drift` is `confirmedCount` and nothing else; every
  * other non-zero count is a reason the run cannot be called clean, and the two
  * never collapse into each other, because collapsing them is how a broken
  * checker reads as a clean one (the Action's `verdict.ts`, same rule).
+ *
+ * Plus a floor under `--fail-on`, added by issue 126: a run that vouched for
+ * nothing is not a pass. Measured on production before the fix — 459 claims
+ * evaluated, none readable, exit 0 on the default `drift` for a month, because
+ * the default covers drift and "I could not read any of it" produces no drift.
+ * Silence from a probe is not compliance.
+ *
+ * The floor is deliberately NOT `anything went wrong`: one unreadable claim
+ * among readable ones still exits 0 under `drift`, because that is what
+ * `--fail-on any` is for, and widening the floor would swallow the distinction.
  */
 export function decideVerdict(report: ManualVerifyResponse, failOn: FailOn): Verdict {
   const drift = report.confirmedCount
+  const vouched = vouchedFor(report)
   const reasons = notCleanReasons(report)
 
   const failsOnDrift = drift > 0 && (failOn === 'drift' || failOn === 'any')
@@ -264,15 +336,48 @@ export function decideVerdict(report: ManualVerifyResponse, failOn: FailOn): Ver
   // not-clean count, and errorCount is named beside it so a report whose flag
   // and counts disagree still fails on the count.
   const failsOnUnverifiable = (report.unverifiable || report.errorCount > 0) && failOn === 'any'
+  // Exempt only at `none`, which is a caller saying "report, do not fail". The
+  // floor closes a gap in a default; it does not overrule an explicit opt-out.
+  // (It cannot reach the GitHub Action either way: that is a separate package
+  // which does not import this one, so the green `manual` badge on a pull
+  // request — the Action running `fail-on: none` — is untouched by this change.
+  // Issue 126 item 4 is where that lives.) The reason line still prints under
+  // `none`, so a run says what it declined to fail on.
+  const failsOnNothingVouched =
+    (readNothing(report) || countsContradict(report)) && failOn !== 'none'
 
-  const exitCode = failsOnDrift ? EXIT_DRIFT : failsOnUnverifiable ? EXIT_UNVERIFIABLE : 0
-  const failure = exitCode === 0 ? null : failureLine(drift, reasons)
-  return { drift, reasons, exitCode, failure }
+  const exitCode = failsOnDrift
+    ? EXIT_DRIFT
+    : failsOnUnverifiable || failsOnNothingVouched
+      ? EXIT_UNVERIFIABLE
+      : 0
+  const failure =
+    exitCode === 0
+      ? null
+      : failsOnNothingVouched && !failsOnDrift
+        ? vouchedNothingLine(report)
+        : failureLine(drift, reasons)
+  return { drift, vouched, readNothing: readNothing(report), reasons, exitCode, failure }
 }
 
 function notCleanReasons(report: ManualVerifyResponse): string[] {
   const reasons: string[] = []
-  if (report.errorCount > 0) {
+  if (countsContradict(report)) {
+    reasons.push(
+      `the report's own counts do not add up (evaluated ${report.evaluatedCount}, ` +
+        `drifted ${report.confirmedCount}, unreadable ${report.errorCount}), ` +
+        'so nothing in it can be trusted.',
+    )
+  }
+  // The floor's own line REPLACES the plain error count rather than sitting
+  // above it: "not one of them could be read" already says "N could not be
+  // read", and two bullets for one fact is how a reader learns to skim.
+  if (readNothing(report)) {
+    reasons.push(
+      `not one of the ${plural(report.evaluatedCount, 'claim')} it evaluated could be read, ` +
+        'so this run vouched for nothing.',
+    )
+  } else if (report.errorCount > 0) {
     reasons.push(`${plural(report.errorCount, 'claim')} could not be read at all.`)
   }
   if (report.unanchoredCount > 0) {
@@ -290,6 +395,14 @@ function notCleanReasons(report: ManualVerifyResponse): string[] {
       `${plural(report.untriggeredCount, 'claim')} sit in a repository no push and no sweep visits, so future drift in them is invisible.`,
     )
   }
+  // Last, and only when nothing above fired. `unverifiable` is the service's
+  // disjunction over the four counts, so normally one of them has already said
+  // why. But the field's own contract calls it "deliberately coarse" and it has
+  // been widened once already, so a flag set for a reason with no count behind
+  // it must still reach the reader instead of being silently dropped.
+  if (report.unverifiable && reasons.length === 0) {
+    reasons.push('the service reports this run as unverifiable, without saying which count.')
+  }
   return reasons
 }
 
@@ -301,6 +414,22 @@ function failureLine(drift: number, reasons: string[]): string {
     return `Manual check failed: ${plural(drift, 'claim')} no longer match the code they cite.`
   }
   return 'Manual check failed: no drift was found, but this run could not vouch for the manual.'
+}
+
+/**
+ * The floor's own headline. Item 3 asks for a message that says "vouched for
+ * nothing" rather than "green", and the reason bullet alone does not do that:
+ * a CI log reader sees the last line, and the generic
+ * "could not vouch for the manual" is also what plain `--fail-on any` prints.
+ */
+function vouchedNothingLine(report: ManualVerifyResponse): string {
+  if (countsContradict(report)) {
+    return 'Manual check failed: the report contradicts itself, so nothing in it can be trusted.'
+  }
+  return (
+    `Manual check failed: this run vouched for none of the ${plural(report.evaluatedCount, 'claim')} ` +
+    'it read, because not one of them could be read at all.'
+  )
 }
 
 /**
@@ -327,15 +456,31 @@ export function renderReport(
   }
 
   lines.push(
+    // `vouched` is printed beside the counts it is derived from, because it is
+    // the number the exit code now rests on and a number a reader cannot
+    // reproduce from the line it sits in is a number they have to trust.
     `Summary: confirmed ${report.confirmedCount} / errors ${report.errorCount} / ` +
       `unanchored ${report.unanchoredCount} / evaluated ${report.evaluatedCount} / ` +
-      `skipped ${report.skippedCount}`,
+      `skipped ${report.skippedCount} / vouched ${verdict.vouched}`,
   )
   if (report.lowCoverageChapters.length > 0) {
     lines.push(`Low coverage: ${report.lowCoverageChapters.join(', ')}`)
   }
-  if (report.unverifiable) {
-    lines.push('This run could not vouch for the manual (unverifiable):')
+  // Gated on the reasons, not on `report.unverifiable`. The flag is the service's
+  // summary of its own four not-clean counts; a run that vouched for nothing is a
+  // fact about the arithmetic across them, and a report can carry it with the flag
+  // unset (every evaluated claim drifted, or counts that contradict each other).
+  // Printing the reasons is how the run says what it could not stand behind.
+  if (verdict.reasons.length > 0) {
+    // The parenthetical names the wire field, so it is only printed when the
+    // field is actually set: the floor can hold with `unverifiable` false (every
+    // evaluated claim drifted and nothing else went wrong), and a header
+    // asserting the opposite of the payload is worse than no header.
+    lines.push(
+      report.unverifiable
+        ? 'This run could not vouch for the manual (unverifiable):'
+        : 'This run could not vouch for the manual:',
+    )
     for (const reason of verdict.reasons) lines.push(`  - ${reason}`)
   }
 
@@ -366,7 +511,12 @@ function escalationNote(verdict: Verdict, failOn: FailOn): string {
   const why =
     verdict.drift > 0
       ? 'This check is green because escalation is off'
-      : 'This check is green because no claim drifted'
+      : // "no claim drifted" is the exact false reassurance issue 126 quotes
+        // from the production run, and it is at its most misleading in the one
+        // case where nothing was vouched for at all.
+        verdict.readNothing
+        ? 'This check is green because you asked for no failures, not because anything was verified'
+        : 'This check is green because no claim drifted'
   const hint =
     failOn === 'none'
       ? 'Pass --fail-on drift to fail on drift, or --fail-on any to fail on anything this run could not vouch for.'

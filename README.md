@@ -121,7 +121,7 @@ Export a project's whole manual as JSON: every version with its commit map, and 
 
 ### `deploylog manual verify`
 
-Check the project's manual against the code it cites, at the commit you are on, from a terminal, a pre-push hook or any CI. Sends one request to the same endpoint the GitHub Action uses; no checking happens client-side. The exit code is the answer: `1` when a cited value moved (drift), `2` when the run could not vouch for the manual and you asked for that with `--fail-on any`, `0` otherwise.
+Check the project's manual against the code it cites, at the commit you are on, from a terminal, a pre-push hook or any CI. Sends one request to the same endpoint the GitHub Action uses; no checking happens client-side. The exit code is the answer: `1` when a cited value moved (drift), `2` when the run could not vouch for the manual — either because you asked for that with `--fail-on any`, or because the run read claims and not one of them held, which fails at any `--fail-on` but `none` — and `0` otherwise. The summary line prints `vouched N`, the number that floor rests on: claims read and stood behind, which is `evaluated` minus the drifted and the unreadable.
 
 ```
 -p, --project <slug>          Project slug (or set in .deploylog.yml)
@@ -132,6 +132,8 @@ Check the project's manual against the code it cites, at the commit you are on, 
 ```
 
 `--repository` must be a repository the manual's commit map covers. A fork or a mirror is a GitHub remote with the wrong slug: the server re-pins only the slug you send, so claims citing the upstream keep their stored pin, and the CLI prints `verified nothing at <ref>: no claim cites <repository>` on stderr when that happens, whatever `--fail-on` is.
+
+Two boundaries of that floor, both deliberate. A manual with one cited file, whose single claim cannot be read, vouches for nothing and so fails at the default — where a manual with two readable claims beside the same broken one passes; the floor asks whether the run stood behind anything, not whether everything went right. And `--json` prints the server's payload untouched, which has no `vouched` field: derive it as `evaluated - confirmed - error`, or read the summary line.
 
 `--changed-from` sends `git diff --name-only --no-renames <base>...HEAD`. An empty diff is not a scope: the CLI verifies the whole manual instead and says so, because an empty list would evaluate no claim and report a clean sweep.
 
