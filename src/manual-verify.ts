@@ -271,7 +271,7 @@ function flagFor(path: string): string {
  * would break every installed CLI and the Action on parse, which is a worse
  * failure than the one being fixed.
  */
-export function vouchedFor(report: ManualVerifyResponse): number {
+function vouchedFor(report: ManualVerifyResponse): number {
   return report.evaluatedCount - report.confirmedCount - report.errorCount
 }
 
@@ -328,7 +328,12 @@ export function decideVerdict(report: ManualVerifyResponse, failOn: FailOn): Ver
     : failsOnUnverifiable || failsOnNothingVouched
       ? EXIT_UNVERIFIABLE
       : 0
-  const failure = exitCode === 0 ? null : failureLine(drift, reasons)
+  const failure =
+    exitCode === 0
+      ? null
+      : failsOnNothingVouched && !failsOnDrift
+        ? vouchedNothingLine(report)
+        : failureLine(drift, reasons)
   return { drift, vouched, reasons, exitCode, failure }
 }
 
@@ -369,6 +374,14 @@ function notCleanReasons(report: ManualVerifyResponse): string[] {
       `${plural(report.untriggeredCount, 'claim')} sit in a repository no push and no sweep visits, so future drift in them is invisible.`,
     )
   }
+  // Last, and only when nothing above fired. `unverifiable` is the service's
+  // disjunction over the four counts, so normally one of them has already said
+  // why. But the field's own contract calls it "deliberately coarse" and it has
+  // been widened once already, so a flag set for a reason with no count behind
+  // it must still reach the reader instead of being silently dropped.
+  if (report.unverifiable && reasons.length === 0) {
+    reasons.push('the service reports this run as unverifiable, without saying which count.')
+  }
   return reasons
 }
 
@@ -380,6 +393,19 @@ function failureLine(drift: number, reasons: string[]): string {
     return `Manual check failed: ${plural(drift, 'claim')} no longer match the code they cite.`
   }
   return 'Manual check failed: no drift was found, but this run could not vouch for the manual.'
+}
+
+/**
+ * The floor's own headline. Item 3 asks for a message that says "vouched for
+ * nothing" rather than "green", and the reason bullet alone does not do that:
+ * a CI log reader sees the last line, and the generic
+ * "could not vouch for the manual" is also what plain `--fail-on any` prints.
+ */
+function vouchedNothingLine(report: ManualVerifyResponse): string {
+  return (
+    `Manual check failed: this run vouched for none of the ${plural(report.evaluatedCount, 'claim')} ` +
+    'it read, so it cannot be called clean whatever else it found.'
+  )
 }
 
 /**
@@ -422,7 +448,15 @@ export function renderReport(
   // unset (every evaluated claim drifted, or counts that contradict each other).
   // Printing the reasons is how the run says what it could not stand behind.
   if (verdict.reasons.length > 0) {
-    lines.push('This run could not vouch for the manual (unverifiable):')
+    // The parenthetical names the wire field, so it is only printed when the
+    // field is actually set: the floor can hold with `unverifiable` false (every
+    // evaluated claim drifted and nothing else went wrong), and a header
+    // asserting the opposite of the payload is worse than no header.
+    lines.push(
+      report.unverifiable
+        ? 'This run could not vouch for the manual (unverifiable):'
+        : 'This run could not vouch for the manual:',
+    )
     for (const reason of verdict.reasons) lines.push(`  - ${reason}`)
   }
 
@@ -453,7 +487,12 @@ function escalationNote(verdict: Verdict, failOn: FailOn): string {
   const why =
     verdict.drift > 0
       ? 'This check is green because escalation is off'
-      : 'This check is green because no claim drifted'
+      : // "no claim drifted" is the exact false reassurance issue 126 quotes
+        // from the production run, and it is at its most misleading in the one
+        // case where nothing was vouched for at all.
+        verdict.vouched <= 0
+        ? 'This check is green because you asked for no failures, not because anything was verified'
+        : 'This check is green because no claim drifted'
   const hint =
     failOn === 'none'
       ? 'Pass --fail-on drift to fail on drift, or --fail-on any to fail on anything this run could not vouch for.'

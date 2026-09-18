@@ -133,6 +133,8 @@ Check the project's manual against the code it cites, at the commit you are on, 
 
 `--repository` must be a repository the manual's commit map covers. A fork or a mirror is a GitHub remote with the wrong slug: the server re-pins only the slug you send, so claims citing the upstream keep their stored pin, and the CLI prints `verified nothing at <ref>: no claim cites <repository>` on stderr when that happens, whatever `--fail-on` is.
 
+Two boundaries of that floor, both deliberate. A manual with one cited file, whose single claim cannot be read, vouches for nothing and so fails at the default — where a manual with two readable claims beside the same broken one passes; the floor asks whether the run stood behind anything, not whether everything went right. And `--json` prints the server's payload untouched, which has no `vouched` field: derive it as `evaluated - confirmed - error`, or read the summary line.
+
 `--changed-from` sends `git diff --name-only --no-renames <base>...HEAD`. An empty diff is not a scope: the CLI verifies the whole manual instead and says so, because an empty list would evaluate no claim and report a clean sweep.
 
 ```bash
