@@ -52,6 +52,8 @@ export interface Verdict {
   drift: number
   /** Claims read and stood behind. Negative means the report contradicts itself. */
   vouched: number
+  /** Every claim this run evaluated was unreadable. The floor, and not `vouched === 0`. */
+  readNothing: boolean
   /** Why this run cannot be called clean. Never folded into `drift`. */
   reasons: string[]
   exitCode: number
@@ -276,15 +278,35 @@ function vouchedFor(report: ManualVerifyResponse): number {
 }
 
 /**
- * A run that read claims and could not stand behind a single one.
+ * A run that read claims and learned nothing from any of them: every claim it
+ * evaluated was unreadable.
  *
- * `evaluatedCount > 0` is the guard that keeps this a floor rather than a
- * nuisance: a scoped run whose diff touched no cited file evaluates nothing, on
- * most pull requests, and there is nothing to vouch for. The CLI's separate
- * `verifiedNothing` stderr line covers that case in words.
+ * Deliberately NOT `vouched <= 0`, which was the first spelling and was wrong.
+ * That is also true of a run where everything it read DRIFTED — a fully
+ * informative run — and it made an ordinary scoped pull request with one drifted
+ * claim print "could not vouch for the rest of the manual" over a report whose
+ * own `unverifiable` flag was false. "Found drift" and "could not check" must
+ * never collapse into each other; a predicate true of both causes is that
+ * collapse, wearing the floor's name.
+ *
+ * `evaluatedCount > 0` keeps this a floor rather than a nuisance: a scoped run
+ * whose diff touched no cited file evaluates nothing, on most pull requests, and
+ * there is nothing to vouch for. The `verifiedNothing` stderr line covers that.
  */
-function vouchedForNothing(report: ManualVerifyResponse): boolean {
-  return report.evaluatedCount > 0 && vouchedFor(report) <= 0
+function readNothing(report: ManualVerifyResponse): boolean {
+  return report.evaluatedCount > 0 && report.errorCount >= report.evaluatedCount
+}
+
+/**
+ * The report contradicts itself: more claims drifted or errored than were
+ * evaluated. Defence in depth, not a live guard — the service cannot emit it,
+ * since every drifted and unreadable claim is one evaluated claim — but the
+ * response schema does not cross-validate the counts, so such a report parses.
+ * Reading it as "nothing held" would be a guess; reading it as clean would be
+ * this ticket's own defect.
+ */
+function countsContradict(report: ManualVerifyResponse): boolean {
+  return vouchedFor(report) < 0
 }
 
 /**
@@ -321,7 +343,8 @@ export function decideVerdict(report: ManualVerifyResponse, failOn: FailOn): Ver
   // request — the Action running `fail-on: none` — is untouched by this change.
   // Issue 126 item 4 is where that lives.) The reason line still prints under
   // `none`, so a run says what it declined to fail on.
-  const failsOnNothingVouched = vouchedForNothing(report) && failOn !== 'none'
+  const failsOnNothingVouched =
+    (readNothing(report) || countsContradict(report)) && failOn !== 'none'
 
   const exitCode = failsOnDrift
     ? EXIT_DRIFT
@@ -334,29 +357,27 @@ export function decideVerdict(report: ManualVerifyResponse, failOn: FailOn): Ver
       : failsOnNothingVouched && !failsOnDrift
         ? vouchedNothingLine(report)
         : failureLine(drift, reasons)
-  return { drift, vouched, reasons, exitCode, failure }
+  return { drift, vouched, readNothing: readNothing(report), reasons, exitCode, failure }
 }
 
 function notCleanReasons(report: ManualVerifyResponse): string[] {
   const reasons: string[] = []
-  // First, because it is the one that subsumes the rest: if nothing held, the
-  // per-count reasons below explain why, and none of them is the headline.
-  if (vouchedForNothing(report)) {
-    const vouched = vouchedFor(report)
+  if (countsContradict(report)) {
     reasons.push(
-      vouched < 0
-        // Defence in depth, not a live guard: the service cannot emit this —
-        // every drifted and unreadable claim is one evaluated claim — but the
-        // response schema does not cross-validate the counts, so a report that
-        // contradicts itself parses. Reading it as "nothing held" would be a
-        // guess and reading it as clean would be this ticket's own defect.
-        ? `the report's own counts do not add up (evaluated ${report.evaluatedCount}, ` +
-            `drifted ${report.confirmedCount}, unreadable ${report.errorCount}), ` +
-            'so nothing in it can be trusted.'
-        : `this run vouched for none of the ${plural(report.evaluatedCount, 'claim')} it read.`,
+      `the report's own counts do not add up (evaluated ${report.evaluatedCount}, ` +
+        `drifted ${report.confirmedCount}, unreadable ${report.errorCount}), ` +
+        'so nothing in it can be trusted.',
     )
   }
-  if (report.errorCount > 0) {
+  // The floor's own line REPLACES the plain error count rather than sitting
+  // above it: "not one of them could be read" already says "N could not be
+  // read", and two bullets for one fact is how a reader learns to skim.
+  if (readNothing(report)) {
+    reasons.push(
+      `not one of the ${plural(report.evaluatedCount, 'claim')} it evaluated could be read, ` +
+        'so this run vouched for nothing.',
+    )
+  } else if (report.errorCount > 0) {
     reasons.push(`${plural(report.errorCount, 'claim')} could not be read at all.`)
   }
   if (report.unanchoredCount > 0) {
@@ -402,9 +423,12 @@ function failureLine(drift: number, reasons: string[]): string {
  * "could not vouch for the manual" is also what plain `--fail-on any` prints.
  */
 function vouchedNothingLine(report: ManualVerifyResponse): string {
+  if (countsContradict(report)) {
+    return 'Manual check failed: the report contradicts itself, so nothing in it can be trusted.'
+  }
   return (
     `Manual check failed: this run vouched for none of the ${plural(report.evaluatedCount, 'claim')} ` +
-    'it read, so it cannot be called clean whatever else it found.'
+    'it read, because not one of them could be read at all.'
   )
 }
 
@@ -490,7 +514,7 @@ function escalationNote(verdict: Verdict, failOn: FailOn): string {
       : // "no claim drifted" is the exact false reassurance issue 126 quotes
         // from the production run, and it is at its most misleading in the one
         // case where nothing was vouched for at all.
-        verdict.vouched <= 0
+        verdict.readNothing
         ? 'This check is green because you asked for no failures, not because anything was verified'
         : 'This check is green because no claim drifted'
   const hint =

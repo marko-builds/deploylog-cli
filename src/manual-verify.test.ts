@@ -318,7 +318,10 @@ describe('manual verify — the floor: a run that vouched for nothing', () => {
     const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(unreadable(459)) } })
     const result = await runManualVerify({ project: 'x', failOn: 'none' }, deps)
     expect((result as { exitCode: number }).exitCode).toBe(0)
-    expect(stdoutText(deps)).toContain('vouched for none of the 459 claims it read')
+    expect(stdoutText(deps)).toContain('not one of the 459 claims it evaluated could be read')
+    // And it must not call itself green "because no claim drifted", which is the
+    // exact sentence this ticket quotes from the production run.
+    expect(stdoutText(deps)).not.toContain('green because no claim drifted')
   })
 
   it('an unverifiable flag with no count behind it still reaches the reader', async () => {
@@ -331,18 +334,34 @@ describe('manual verify — the floor: a run that vouched for nothing', () => {
     expect(stdoutText(deps)).toContain('the service reports this run as unverifiable')
   })
 
-  it('does not call a report unverifiable when the payload says it is not', async () => {
-    // The floor can hold with `unverifiable` false: every evaluated claim
-    // drifted, nothing errored, no unanchored chapters, no thin coverage, no
-    // untriggered claims. A header asserting the opposite of the payload is
-    // worse than no header.
-    const allDrifted = cleanReport({
+  it('a scoped run with one drifted claim reads as drift, not as "could not vouch"', async () => {
+    // The ordinary pull-request path, and the regression the first spelling of
+    // the floor introduced: `vouched <= 0` is also true when everything the run
+    // read DRIFTED, so a one-claim scoped run printed "could not vouch for the
+    // rest of the manual" and a "(unverifiable)" header over a payload whose
+    // own flag was false. Found drift and could not check must not collapse.
+    const scopedDrift = cleanReport({
       chapters: [chapter({ state: 'CONFIRMED', confirmed: driftReport().chapters[0]!.confirmed })],
       confirmedCount: 1,
+      errorCount: 0,
       evaluatedCount: 1,
+      skippedCount: 458,
       unverifiable: false,
     })
-    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(allDrifted) } })
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(scopedDrift) } })
+    const result = await runManualVerify({ project: 'x' }, deps)
+    const out = stdoutText(deps)
+    expect((result as { exitCode: number }).exitCode).toBe(1)
+    expect(out).toContain('1 claim no longer match')
+    expect(out).not.toContain('could not vouch')
+    expect(out).not.toContain('unverifiable')
+  })
+
+  it('does not call a report unverifiable when the payload says it is not', async () => {
+    // The parenthetical names a wire field, so it must not appear over a report
+    // whose field is false. Reachable through the self-contradicting counts.
+    const impossible = cleanReport({ evaluatedCount: 2, errorCount: 5, unverifiable: false })
+    const deps = makeDeps({ api: { verifyManual: vi.fn().mockResolvedValue(impossible) } })
     await runManualVerify({ project: 'x' }, deps)
     const out = stdoutText(deps)
     expect(out).toContain('could not vouch for the manual:')
