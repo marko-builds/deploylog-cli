@@ -121,7 +121,7 @@ Export a project's whole manual as JSON: every version with its commit map, and 
 
 ### `deploylog manual verify`
 
-Check the project's manual against the code it cites, at the commit you are on, from a terminal, a pre-push hook or any CI. Sends one request to the same endpoint the GitHub Action uses; no checking happens client-side. The exit code is the answer: `1` when a cited value moved (drift), `2` when the run could not vouch for the manual and you asked for that with `--fail-on any`, `0` otherwise.
+Check the project's manual against the code it cites, at the commit you are on, from a terminal, a pre-push hook or any CI. Sends one request to the same endpoint the GitHub Action uses; no checking happens client-side. The exit code is the answer: `1` when a cited value moved (drift), `2` when the run could not vouch for the manual — either because you asked for that with `--fail-on any`, or because the run read claims and not one of them held, which fails at any `--fail-on` but `none` — and `0` otherwise. The summary line prints `vouched N`, the number that floor rests on: claims read and stood behind, which is `evaluated` minus the drifted and the unreadable.
 
 ```
 -p, --project <slug>          Project slug (or set in .deploylog.yml)
