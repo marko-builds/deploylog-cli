@@ -83,6 +83,13 @@ One prompt, `draft_release_notes`: takes `since` (tag or ref, default last tag) 
 - Do NOT queue this to `afk-implement.sh` (Marko's call d)
 
 ## Open before build
+- **v1.3 remote-transport prior art** (2026-09-22, not for this build — Boundaries above defer it):
+  `github.com/ever-co/ever-gauzy`'s `packages/mcp-server` ships the pattern this roadmap item will
+  need — a tool-registry-as-data layer, a transport factory that auto-detects stdio/HTTP/WebSocket,
+  tenant-scoped sessions, and a companion OAuth2 authorization server for MCP implementing RFC 9728
+  discovery (`apps/mcp-auth`, `packages/auth/src/lib/mcp/server/oauth-authorization-server.ts`).
+  AGPL-3.0 — architecture reference only, not code to port. Knowledge:
+  [[concept-mcp-server-multitenant-architecture]], [[source-ever-gauzy-mcp-server]].
 - ~~`@modelcontextprotocol/sdk` version and its zod peer range~~ resolved 2026-08-27 (`npm view`: 1.30.0, peer `zod ^3.25 || ^4.0`)
 - Whether Claude Code passes the project cwd to a stdio server added at user scope (`-s user`) as well as project scope. With `project` explicit on every tool and the slug echoed, either answer works; it decides only what the docs page recommends
 - The official Anthropic marketplace submission process (asked of `claude-code-guide` at build time)
