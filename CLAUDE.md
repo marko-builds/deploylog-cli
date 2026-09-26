@@ -4,14 +4,15 @@
 terminal, generate release notes from git, work with a project's Manual. One of DeployLog's four
 repos; the API it calls lives in `projects/deploylog` under `src/app/api/cli/*`.
 
-- **Package:** `deploylog` on npm, `0.6.0` (2026-08-25). MIT. Node 18+ per the README (no `engines`
+- **Package:** `deploylog` on npm, `0.7.0` (2026-09-26). MIT. Node 18+ per the README (no `engines`
   field in `package.json`).
 - **Shape:** ESM (`"type": "module"`, tsconfig `module: Node16`, target ES2022, `strict`),
   Commander 13, `conf` for credentials, `yaml`, `zod` 4, `chalk`. Five runtime deps; keep it that
   way (a heavy dependency loads lazily inside its own subcommand, see issue 06).
 - **Build / test:** `npm run build` (tsc → `dist/`, the only thing published), `npm test`
   (`vitest run`, no config file; `src/*.test.ts` sit beside their modules and are excluded from
-  tsc). 11 files, 174 tests on 2026-08-27; run the suite for the real number.
+  tsc). 11 files, 197 tests on 2026-09-26, green on Windows and Linux; run the suite for the real
+  number. No CI job runs it (the only workflow is `manual-check.yml`), so run it before a release.
 - **Siblings:** `projects/deploylog` (API + dashboard), `projects/deploylog-widget`,
   `projects/deploylog-action` (`deploylogdev/action`, its own package: it does not import this one).
 
@@ -75,8 +76,9 @@ issues/NN-slug.md      one file per work item (header fields, What to build, Acc
 ## The API this CLI talks to
 
 - `GET/POST /api/cli/*` on `https://deploylog.dev` (override with `deploylog login --api-url`).
-  `Authorization: Bearer dk_...`; keys carry `read` and/or `write` permissions and the server
-  answers `403` when a permission is missing.
+  `Authorization: Bearer dk_...`; keys carry any of `read`, `write`, `publish`, `delete` (the
+  dashboard always adds `read`), and the server answers `403` when a permission is missing. A
+  revoked key's row is deleted, so it answers `401 Valid API key required`; keys never expire.
 - **The `cli` rate limit is per ORG, 60/min sliding window, shared by everything that sends a
   `dk_` key** (this CLI, the GitHub Action, and the MCP server once it exists; the dashboard has
   its own buckets). A 429 carries `Retry-After`. Never loop or poll against the API from a command.
@@ -88,7 +90,9 @@ issues/NN-slug.md      one file per work item (header fields, What to build, Acc
 Chapter 05 of the DeployLog Manual cites this repository: `README.md`, `src/index.ts`,
 `src/push.ts`, `src/init.ts`, `src/manual-verify.ts` (51 claims on 2026-08-25). On every pull
 request `manual-check.yml` runs `deploylogdev/action@v1` in verify mode against the pushed commit
-(`fail-on: none`, so it annotates and stays green; flip to `drift` to block). Read the annotations
+(`fail-on: none`, so it annotates and stays green; flip to `drift` to block). A revoked
+`DEPLOYLOG_API_KEY` secret still turns it red (2026-09-26, PR #16): the fix is a new read-only key
+in the repo secret, never a code change. Read the annotations
 on any PR that touches a cited file. `deploylog manual verify` checks the commit **on GitHub**, so
 run it after a push, not on a dirty tree. When the command surface changes, chapter 05 is
 regenerated on the deploylog side and arrives here as a `deploylog/chapter-<id>` PR; the README
@@ -96,9 +100,13 @@ regenerated on the deploylog side and arrives here as a `deploylog/chapter-<id>`
 
 ## Releasing (Marko runs the publish)
 
-1. Bump `version` in `package.json` (the only place). 2. `npm run build && npm test`.
-3. `npm publish` (`prepublishOnly` builds). 4. Regenerate chapter 05 if the surface changed.
-5. Flip the issue's `Status:` with the commit sha. Branch names so far: `feat/`, `ci/`,
+1. `npm version <x.y.z> --no-git-tag-version` (sets `package.json` and `package-lock.json`).
+2. `npm run build && npm test`. 3. After the PR merges, `npm publish` from `main`
+(`prepublishOnly` builds). 4. Verify with `npm i -g deploylog@<x.y.z> --prefer-online`, then
+`deploylog --version`: minutes after a publish, npm's cached package list can lack the new version
+(`deploylog@0.7.0` failed with `notarget` until `--prefer-online`, 2026-09-26).
+5. Annotated tag `v<x.y.z>` on the merge commit. 6. Regenerate chapter 05 if the surface changed.
+7. Flip the issue's `Status:` with the commit sha. Branch names so far: `feat/`, `ci/`,
 `deploylog/chapter-<id>` (chapter re-exports). Stale local `feat/*` branches are merged history;
 do not build on them. Marko merges PRs fast: re-check `gh pr view` before pushing to a branch that
 has one.
