@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { runInit, type InitDeps } from './init.js'
 import type { Project } from './api.js'
@@ -48,7 +49,7 @@ describe('runInit', () => {
 
     expect(deps.select).not.toHaveBeenCalled()
     expect(res).toMatchObject({ kind: 'written', project: 'my-app' })
-    expect(deps.write).toHaveBeenCalledWith('/repo/.deploylog.yml', 'project: my-app\n')
+    expect(deps.write).toHaveBeenCalledWith(join('/repo', '.deploylog.yml'), 'project: my-app\n')
   })
 
   it('writes default_type with the readProjectConfig key name', async () => {
@@ -56,7 +57,7 @@ describe('runInit', () => {
     await runInit({ type: 'fix' }, deps)
 
     expect(deps.write).toHaveBeenCalledWith(
-      '/repo/.deploylog.yml',
+      join('/repo', '.deploylog.yml'),
       'project: my-app\ndefault_type: fix\n',
     )
   })
