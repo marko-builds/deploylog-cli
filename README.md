@@ -35,6 +35,16 @@ deploylog login --key dk_xxx
 
 Credentials are stored with [`conf`](https://github.com/sindresorhus/conf) in your OS's standard config directory.
 
+## Set up with a coding agent
+
+Paste this into Claude Code, Codex or Cursor:
+
+```text
+Set up DeployLog in this repository by following https://deploylog.dev/install/agent.md
+```
+
+The agent installs the CLI, wires the repository and saves one draft to prove it works. You create the API key and run `deploylog login` yourself, so the key never passes through the agent.
+
 ## Quick start
 
 ```bash
