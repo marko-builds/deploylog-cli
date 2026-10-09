@@ -11,8 +11,10 @@ repos; the API it calls lives in `projects/deploylog` under `src/app/api/cli/*`.
   way (a heavy dependency loads lazily inside its own subcommand, see issue 06).
 - **Build / test:** `npm run build` (tsc → `dist/`, the only thing published), `npm test`
   (`vitest run`, no config file; `src/*.test.ts` sit beside their modules and are excluded from
-  tsc). 11 files, 197 tests on 2026-09-26, green on Windows and Linux; run the suite for the real
-  number. No CI job runs it (the only workflow is `manual-check.yml`), so run it before a release.
+  tsc). 12 files, 199 tests on 2026-10-10, green on Windows and Linux; run the suite for the real
+  number. `ci.yml` runs `npm ci`, `npm run build` and `npm test` on every pull request and push to
+  `main` (Node 22 on Ubuntu and Windows, Node 20 on Ubuntu); `src/ci-workflow.test.ts` fails if an
+  edit stops it running the gate on pull requests. Still run the suite locally before a release.
 - **Siblings:** `projects/deploylog` (API + dashboard), `projects/deploylog-widget`,
   `projects/deploylog-action` (`deploylogdev/action`, its own package: it does not import this one).
 
@@ -41,6 +43,7 @@ src/
 docs/manual/05-cli.md  chapter 05 (The CLI) as the Manual pushes it here on a `deploylog/chapter-<id>` PR; never hand-edited
 issues/NN-slug.md      one file per work item (header fields, What to build, Acceptance, Boundaries)
 .github/workflows/manual-check.yml   the Action in verify mode on every pull request
+.github/workflows/ci.yml             the gate (npm ci, build, test) on every pull request and push to main
 ```
 
 ## Conventions (the ones that are load-bearing)
