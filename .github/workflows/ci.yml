@@ -1,0 +1,42 @@
+# Runs this repo's gate (npm ci, npm run build, npm test; see CLAUDE.md) on every pull
+# request and on every push to main, so a green check on a CLI pull request means the suite
+# ran. manual-check.yml verifies the Manual's claims and runs no tests.
+# src/ci-workflow.test.ts fails if an edit stops this workflow running the gate on pull
+# requests.
+#
+# Matrix, a default taken 2026-10-10 and not yet confirmed: Node 22 on Ubuntu and on
+# Windows (the suite is run on both), plus Node 20 on Ubuntu, the oldest Node the test
+# toolchain installs on (vite 8, under vitest 4, needs ^20.19.0 or >=22.12.0). The README
+# says Node 18+, which no job here can test.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            node: 22
+          - os: windows-latest
+            node: 22
+          - os: ubuntu-latest
+            node: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
