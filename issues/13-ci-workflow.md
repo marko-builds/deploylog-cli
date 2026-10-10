@@ -1,6 +1,6 @@
 # 13 - Run the build and test suite in CI (`ci.yml`)
 
-**Status:** in review 2026-10-10 (branch `ci/test-workflow`, not pushed; the workflow has not run on GitHub yet) · **Type:** AFK build; HUMAN to confirm the defaults below and merge · **Lane:** deploylog-cli
+**Status:** merged as b843c9f, ships in 0.7.1 (publish pending, Marko) · **Type:** AFK build; HUMAN to confirm the defaults below and merge · **Lane:** deploylog-cli
 **Parent:** monolith backlog item E11, triaged 2026-10-10 (no issue file existed for it before this one).
 **Blocked by:** nothing.
 **Verification:** locally, `npm ci`, `npm run build`, `npm test` exit 0, and a mutation harness over `ci.yml` turns `src/ci-workflow.test.ts` red for every edit listed under Acceptance while three controls stay green. On GitHub, the pull request for this branch should run `ci.yml` on itself (GitHub documents that a `pull_request` workflow runs from the pull request's merge commit, so the workflow that adds it applies; not yet observed here) and its three `test (...)` jobs report green. Known negative: the Manual check alone is not evidence, since it runs no tests.
