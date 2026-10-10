@@ -20,15 +20,37 @@ function makeDeps(over: Partial<LoginDeps> = {}): LoginDeps {
 
 const UNDER_SUDO = { env: { SUDO_USER: 'marko' }, getuid: () => 0 }
 
+/**
+ * Every shape of a process sudo started. SUDO_USER alone decides, so uid is
+ * never consulted: `sudo -u bob` runs as a non-root uid, and a Windows process
+ * has no getuid at all. The check is `!== undefined` as issue 09 specifies, so
+ * an empty SUDO_USER refuses too.
+ */
+const SUDO_PROCS: Array<[string, LoginDeps['proc']]> = [
+  ['sudo (root)', UNDER_SUDO],
+  ['sudo -u bob (uid 1000)', { env: { SUDO_USER: 'marko' }, getuid: () => 1000 }],
+  ['a process with no getuid (Windows)', { env: { SUDO_USER: 'marko' } }],
+  ['SUDO_USER set but empty', { env: { SUDO_USER: '' }, getuid: () => 0 }],
+]
+
 describe('runLogin under sudo', () => {
-  it('refuses with a typed refusal and writes nothing', async () => {
-    const deps = makeDeps({ proc: UNDER_SUDO })
+  it.each(SUDO_PROCS)('refuses --key under %s and writes nothing', async (_label, proc) => {
+    const deps = makeDeps({ proc })
     const res = await runLogin({ key: 'dk_abc', apiUrl: 'https://deploylog.dev' }, deps)
 
     expect(res.kind).toBe('sudo-not-supported')
     expect(deps.store.setApiKey).not.toHaveBeenCalled()
     expect(deps.store.setApiUrl).not.toHaveBeenCalled()
+  })
+
+  it('refuses the interactive form (no --key) before the prompt and before any --api-url write', async () => {
+    const deps = makeDeps({ proc: UNDER_SUDO })
+    const res = await runLogin({ apiUrl: 'https://deploylog.dev' }, deps)
+
+    expect(res.kind).toBe('sudo-not-supported')
     expect(deps.promptKey).not.toHaveBeenCalled()
+    expect(deps.store.setApiUrl).not.toHaveBeenCalled()
+    expect(deps.store.setApiKey).not.toHaveBeenCalled()
   })
 
   it('names the fix: rerun without sudo, and an install that needed root is an npm prefix problem', async () => {
@@ -36,7 +58,7 @@ describe('runLogin under sudo', () => {
 
     if (res.kind !== 'sudo-not-supported') throw new Error(`expected a refusal, got ${res.kind}`)
     expect(res.message).toContain('`deploylog login`')
-    expect(res.message).toContain('without sudo')
+    expect(res.message).toContain('Run `deploylog login` again without sudo.')
     expect(res.message).toContain('npm prefix')
     expect(res.message).toContain(
       'https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally',
@@ -124,13 +146,13 @@ describe('runLogin without sudo (the guard stays silent)', () => {
 })
 
 describe('runLogout', () => {
-  it('refuses under sudo, clears nothing, and names the fix', () => {
-    const deps = makeDeps({ proc: UNDER_SUDO })
+  it.each(SUDO_PROCS)('refuses under %s, clears nothing, and names the fix', (_label, proc) => {
+    const deps = makeDeps({ proc })
     const res = runLogout(deps)
 
     if (res.kind !== 'sudo-not-supported') throw new Error(`expected a refusal, got ${res.kind}`)
     expect(res.message).toContain('`deploylog logout`')
-    expect(res.message).toContain('without sudo')
+    expect(res.message).toContain('Run `deploylog logout` again without sudo.')
     expect(deps.store.clear).not.toHaveBeenCalled()
   })
 
