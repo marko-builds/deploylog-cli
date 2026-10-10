@@ -2,7 +2,7 @@
 
 import { Command } from 'commander'
 import chalk from 'chalk'
-import { setApiKey, setApiUrl, getApiUrl, getConfigPath, clearConfig } from './config.js'
+import { getApiUrl, getConfigPath } from './config.js'
 import {
   listProjects,
   listEntries,
@@ -22,6 +22,7 @@ import {
   defaultEntryCommandDeps,
 } from './entry-commands.js'
 import { runInit, defaultInitDeps } from './init.js'
+import { runLogin, runLogout, type LoginOptions } from './login.js'
 import { runOpen } from './open.js'
 import { runManualExport } from './manual.js'
 import { runManualVerify, isFailOn, FAIL_ON_VALUES, DEFAULT_FAIL_ON } from './manual-verify.js'
@@ -46,53 +47,16 @@ program
   .description('Authenticate with an API key')
   .option('--key <key>', 'API key (starts with dk_)')
   .option('--api-url <url>', 'API base URL (default: https://deploylog.dev)')
-  .action(async (opts: { key?: string; apiUrl?: string }) => {
-    if (opts.apiUrl) {
-      let parsed: URL
-      try {
-        parsed = new URL(opts.apiUrl.trim())
-      } catch {
-        console.error(chalk.red('Invalid API URL. Provide a valid absolute URL.'))
-        process.exit(1)
-      }
-      // Require http(s) and a real host — a scheme-only value like "https://"
-      // parses but would break request URL construction.
-      if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname) {
-        console.error(chalk.red('Invalid API URL. Must use http(s) and include a host.'))
-        process.exit(1)
-      }
-      setApiUrl(opts.apiUrl)
-    }
-
-    if (opts.key) {
-      if (!opts.key.startsWith('dk_')) {
-        console.error(chalk.red('Invalid API key. Keys start with dk_'))
-        process.exit(1)
-      }
-      setApiKey(opts.key)
-      console.log(chalk.green('Authenticated successfully.'))
-      console.log(chalk.dim(`Config saved to ${getConfigPath()}`))
+  .action(async (opts: LoginOptions) => {
+    // sudo-not-supported | invalid-url | invalid-key: a misuse refusal.
+    const result = await runLogin(opts)
+    if (result.kind !== 'saved') {
+      console.error(chalk.red(result.message))
+      process.exitCode = 1
       return
     }
-
-    // Interactive: prompt for key
-    const { createInterface } = await import('node:readline')
-    const rl = createInterface({ input: process.stdin, output: process.stdout })
-
-    const key = await new Promise<string>((resolve) => {
-      rl.question('Enter your API key (from Dashboard → API Keys): ', resolve)
-    })
-    rl.close()
-
-    const trimmed = key.trim()
-    if (!trimmed.startsWith('dk_')) {
-      console.error(chalk.red('Invalid API key. Keys start with dk_'))
-      process.exit(1)
-    }
-
-    setApiKey(trimmed)
     console.log(chalk.green('Authenticated successfully.'))
-    console.log(chalk.dim(`Config saved to ${getConfigPath()}`))
+    console.log(chalk.dim(`Config saved to ${result.configPath}`))
   })
 
 // ─── logout ─────────────────────────────────────────────────────────────────
@@ -101,7 +65,12 @@ program
   .command('logout')
   .description('Remove stored credentials')
   .action(() => {
-    clearConfig()
+    const result = runLogout()
+    if (result.kind !== 'cleared') {
+      console.error(chalk.red(result.message))
+      process.exitCode = 1
+      return
+    }
     console.log(chalk.green('Logged out. Credentials removed.'))
   })
 

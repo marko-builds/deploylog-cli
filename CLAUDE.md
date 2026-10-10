@@ -34,6 +34,7 @@ src/
   push.ts              runPush(opts, deps): entry from flags / git / AI summary → draft or publish
   entry-commands.ts    runSetPublished / runView / runEdit / runDelete (EntryCommandDeps)
   init.ts, open.ts     runInit (.deploylog.yml), runOpen (browser)
+  login.ts             runLogin / runLogout: the credential writes; refused under sudo (SUDO_USER set), issue 09
   manual.ts            runManualExport: the manual payload as JSON (`./<slug>-manual.json`, or `-`)
   manual-verify.ts     runManualVerify: claims vs the pushed commit; decideVerdict, renderReport
   manual-schema.ts, manual-verify-schema.ts   zod: the manual contract shared with the server

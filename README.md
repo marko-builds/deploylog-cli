@@ -94,6 +94,8 @@ Authenticate with an API key (create one at [deploylog.dev/dashboard/api-keys](h
 --api-url <url>   API base URL (default: https://deploylog.dev)
 ```
 
+Both refuse to run under `sudo` and exit 1: under `sudo` they would write as root, into root's config or into yours as a root-owned file you could no longer update without `sudo`. Run them without `sudo`. If installing the CLI needed `sudo`, fix the npm prefix ([npm docs](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally)). Read-only commands such as `whoami` and `--version` work under `sudo` as before.
+
 ### `deploylog init`
 
 Scaffold `.deploylog.yml` in the current directory. Picks the project interactively, or takes `--project`.
