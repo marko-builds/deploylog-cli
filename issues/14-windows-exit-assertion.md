@@ -1,6 +1,6 @@
 # 14 — Exit with the documented code on Windows (no `process.exit` after a request)
 
-**Status:** in review 2026-10-10 (branch `fix/windows-exit-code`) · **Type:** AFK · **Lane:** deploylog-cli
+**Status:** merged as dbeff68, ships in 0.7.1 (publish pending, Marko) · **Type:** AFK · **Lane:** deploylog-cli
 **Parent:** Marko's repro 2026-10-10 (`deploylog manual verify` from a deploylog checkout, Windows 11, Node v24.19.0, `deploylog@0.7.0` global)
 **Blocked by:** None
 **Verification:** `vitest run src/index.test.ts`: 10 tests, 8 red on the old `index.ts`. One mutation per arm, each failing only its arm: code 2 collapsed to 1, a clean run set to 1, the invalid `--fail-on` return dropped, the `list` project refusal ignored, `handleError` not setting the code, the `list` flag-conflict return dropped, the verify refusal not setting the code, one `process.exit` reintroduced in `view`. End to end on Windows against production: the fixed `dist/` exits 1 with no assertion on 5 of 5 `manual verify` runs (3 human, 2 `--json`, stdout parses), and `whoami` on a 401 exits 1 on 3 of 3 where the old `dist/` exited 127 on 3 of 3.
