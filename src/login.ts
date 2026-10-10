@@ -43,18 +43,25 @@ const INVALID_KEY = { kind: 'invalid-key', message: 'Invalid API key. Keys start
 const NPM_PREFIX_DOC =
   'https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally'
 
-/** What running the command under sudo would do instead of what the user meant. */
+/**
+ * What running the command under sudo would do instead of what the user meant.
+ * Which directory it hits depends on whether sudo resets HOME, so each names
+ * both outcomes rather than one directory.
+ */
 const SUDO_HARM = {
   login:
-    'The key would be saved in the config of the user sudo runs as (root, by default), not in yours, so every deploylog command you run without sudo would find no credentials.',
+    "Under sudo the key would be written as root: into root's config, which deploylog never reads when you run it without sudo, or into yours as a root-owned file you could no longer update without sudo.",
   logout:
-    'It would clear the config of the user sudo runs as (root, by default), not yours, so your own key would stay saved.',
+    "Under sudo it would run as root: it would clear root's config and leave your key saved, or rewrite yours as a root-owned file you could no longer update without sudo.",
 } as const
 
 /**
- * `conf` writes to the running user's config dir, so a credential write under
- * sudo lands in root's store and nothing later says so (pnpm 12 refuses the
- * same way: ERR_PNPM_SUDO_NOT_SUPPORTED). SUDO_USER is set under sudo and
+ * `conf` resolves its dir from the home directory (env-paths reads
+ * os.homedir(), which follows $HOME on POSIX). A credential write under sudo
+ * runs as root and lands in root's store where sudo resets HOME, or in the
+ * user's own store as a root-owned file where sudo keeps it, and nothing
+ * later says so either way (pnpm 12 refuses the same way:
+ * ERR_PNPM_SUDO_NOT_SUPPORTED). SUDO_USER is set under sudo and
  * absent under a real root login or `su`; uid 0 alone is not the signal,
  * because a container running as root is a legitimate user. Every command
  * that writes credentials or global config calls this first; read-only
