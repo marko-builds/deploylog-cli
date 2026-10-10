@@ -11,8 +11,8 @@ repos; the API it calls lives in `projects/deploylog` under `src/app/api/cli/*`.
   way (a heavy dependency loads lazily inside its own subcommand, see issue 06).
 - **Build / test:** `npm run build` (tsc → `dist/`, the only thing published), `npm test`
   (`vitest run`, no config file; `src/*.test.ts` sit beside their modules and are excluded from
-  tsc). 12 files, 200 tests on 2026-10-10, green on Windows (Node 24); the Ubuntu jobs in `ci.yml`
-  are the Linux check, not yet run. Run the suite for the real number. `ci.yml` runs `npm ci`, `npm run build` and `npm test` on every pull request and push to
+  tsc). 14 files, 230 tests on 2026-10-10, green on Windows (Node 24); the Ubuntu jobs in `ci.yml`
+  are the Linux check. Run the suite for the real number. `ci.yml` runs `npm ci`, `npm run build` and `npm test` on every pull request and push to
   `main` (Node 22 on Ubuntu and Windows, Node 20 on Ubuntu). `src/ci-workflow.test.ts` fails if the
   `pull_request` trigger is removed or narrowed (branches, paths, activity types), push to `main` is
   dropped, a gate step is removed or reordered, or a job or gate step gets an `if` or
@@ -62,6 +62,11 @@ issues/NN-slug.md      one file per work item (header fields, What to build, Acc
 2. **Typed refusals, not `process.exit`.** A domain function returns a `kind`-tagged union
    (`created | no-commits | missing-fields | cancelled | not-found | ...`); the adapter decides the
    message and the exit code. Adding a failure mode means adding a `kind`, and a test for it.
+   The adapter does not call `process.exit` either: it sets `process.exitCode` and returns. On
+   Windows (Node 24) `process.exit()` after a request aborts in libuv
+   (`!(handle->flags & UV_HANDLE_CLOSING)`) and the shell sees 127 instead of the code (issue 14).
+   `index.test.ts` fails on any `process.exit` in `src/`; it imports the adapter with its modules
+   mocked, since `index.ts` has no deps seam.
 3. **`--json` on every data command.** Raw JSON on stdout, `{"error":{"code","message"}}` on
    stderr, no interactive prompt, ever, when `--json` is set (README "Machine-readable output":
    built for CI and agents). A new command ships with it.
