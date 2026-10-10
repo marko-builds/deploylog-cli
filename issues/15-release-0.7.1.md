@@ -1,6 +1,6 @@
 # 15 - Release 0.7.1: version bump and release notes (no publish, no tag)
 
-**Status:** in review 2026-10-10 (branch `chore/release-0.7.1`) · **Type:** AFK prep; HUMAN publishes · **Lane:** deploylog-cli
+**Status:** in review as PR #22 (2026-10-10), branch `chore/release-0.7.1`, unmerged and unpublished · **Type:** AFK prep; HUMAN publishes · **Lane:** deploylog-cli
 **Parent:** monolith wave 2 item L071, 2026-10-10.
 **Blocked by:** nothing. The publish waits on this pull request's merge.
 **Verification:** `npm ci`, `npm run build` and `npm test` exit 0; `node dist/index.js --version` prints `0.7.1`; `npm pack --dry-run` names `deploylog-0.7.1.tgz`. Known negative: the same acceptance probe run on `main` before the bump failed all 7 of its arms (`0.7.0` in three version fields and on `--version`, and three stale `Status:` lines).
