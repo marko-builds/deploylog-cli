@@ -27,6 +27,13 @@ import { runManualExport } from './manual.js'
 import { runManualVerify, isFailOn, FAIL_ON_VALUES, DEFAULT_FAIL_ON } from './manual-verify.js'
 import { getCliVersion } from './version.js'
 
+// A failing command sets `process.exitCode` and returns; nothing here calls
+// `process.exit()`. On Windows (Node 24), exiting that way while a fetch's TLS
+// socket is still closing aborts in libuv (`Assertion failed: !(handle->flags &
+// UV_HANDLE_CLOSING)`, src\win\async.c) after the output is printed, and the
+// shell sees 127 instead of the documented code (issue 14). index.test.ts
+// fails on any `process.exit` in src/.
+
 const program = new Command()
 
 program
@@ -53,13 +60,15 @@ program
         parsed = new URL(opts.apiUrl.trim())
       } catch {
         console.error(chalk.red('Invalid API URL. Provide a valid absolute URL.'))
-        process.exit(1)
+        process.exitCode = 1
+        return
       }
       // Require http(s) and a real host — a scheme-only value like "https://"
       // parses but would break request URL construction.
       if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname) {
         console.error(chalk.red('Invalid API URL. Must use http(s) and include a host.'))
-        process.exit(1)
+        process.exitCode = 1
+        return
       }
       setApiUrl(opts.apiUrl)
     }
@@ -67,7 +76,8 @@ program
     if (opts.key) {
       if (!opts.key.startsWith('dk_')) {
         console.error(chalk.red('Invalid API key. Keys start with dk_'))
-        process.exit(1)
+        process.exitCode = 1
+        return
       }
       setApiKey(opts.key)
       console.log(chalk.green('Authenticated successfully.'))
@@ -87,7 +97,8 @@ program
     const trimmed = key.trim()
     if (!trimmed.startsWith('dk_')) {
       console.error(chalk.red('Invalid API key. Keys start with dk_'))
-      process.exit(1)
+      process.exitCode = 1
+      return
     }
 
     setApiKey(trimmed)
@@ -223,7 +234,7 @@ manual
           if (opts.json)
             printJsonError(result.kind.toUpperCase().replace(/-/g, '_'), result.message)
           else console.error(chalk.red(result.message))
-          process.exit(1)
+          process.exitCode = 1
       }
     } catch (err) {
       handleError(err, opts.json)
@@ -257,7 +268,8 @@ manual
           const message = `Invalid value for --fail-on: "${opts.failOn}". Expected one of: ${FAIL_ON_VALUES.join(', ')}.`
           if (opts.json) printJsonError('INVALID_FAIL_ON', message)
           else console.error(chalk.red(message))
-          process.exit(1)
+          process.exitCode = 1
+          return
         }
         const result = await runManualVerify({
           project: opts.project,
@@ -271,13 +283,13 @@ manual
           case 'verified':
             // The report (or the JSON payload) is already on stdout; only the
             // exit code is left, and it is the whole point of the command.
-            if (result.exitCode !== 0) process.exit(result.exitCode)
+            process.exitCode = result.exitCode
             break
           default:
             if (opts.json)
               printJsonError(result.kind.toUpperCase().replace(/-/g, '_'), result.message)
             else console.error(chalk.red(result.message))
-            process.exit(1)
+            process.exitCode = 1
         }
       } catch (err) {
         handleError(err, opts.json)
@@ -309,10 +321,12 @@ program
       try {
         if (opts.drafts && opts.published) {
           console.error(chalk.red('Use at most one of --drafts / --published.'))
-          process.exit(1)
+          process.exitCode = 1
+          return
         }
 
         const slug = resolveProject(opts.project)
+        if (slug === undefined) return
         const filters: ListEntriesFilters = {}
         if (opts.drafts) filters.status = 'draft'
         if (opts.published) filters.status = 'published'
@@ -378,7 +392,8 @@ program
         } else {
           console.error(chalk.red(result.message))
         }
-        process.exit(1)
+        process.exitCode = 1
+        return
       }
 
       const e = result.entry
@@ -459,12 +474,13 @@ program
           // Valid command, nothing to do — warn (yellow) and exit non-zero.
           if (opts.json) printJsonError('NO_COMMITS', result.message)
           else console.error(chalk.yellow(result.message))
-          process.exit(1)
+          process.exitCode = 1
+          break
         default:
           // no-ai-source | missing-fields — a misuse refusal.
           if (opts.json) printJsonError(result.kind.toUpperCase().replace(/-/g, '_'), result.message)
           else console.error(chalk.red(result.message))
-          process.exit(1)
+          process.exitCode = 1
       }
     } catch (err) {
       handleError(err, opts.json)
@@ -526,12 +542,13 @@ program
           case 'body-rejected':
             if (opts.json) printJsonError('VALIDATION_ERROR', result.message)
             else console.error(chalk.red(result.message))
-            process.exit(1)
+            process.exitCode = 1
+            break
           default:
             if (opts.json)
               printJsonError(result.kind.toUpperCase().replace(/-/g, '_'), result.message)
             else console.error(chalk.red(result.message))
-            process.exit(1)
+            process.exitCode = 1
         }
       } catch (err) {
         handleError(err, opts.json)
@@ -557,6 +574,7 @@ importCmd
   .action(async (repo: string, opts: { project?: string; token?: string; json?: boolean }) => {
     try {
       const slug = resolveProject(opts.project)
+      if (slug === undefined) return
       const token = opts.token ?? process.env.DEPLOYLOG_GITHUB_TOKEN
       const result = await importGithub(slug, repo, token)
 
@@ -612,7 +630,7 @@ program
           if (opts.json)
             printJsonError(result.kind.toUpperCase().replace(/-/g, '_'), result.message)
           else console.error(chalk.red(result.message))
-          process.exit(1)
+          process.exitCode = 1
       }
     } catch (err) {
       handleError(err, opts.json)
@@ -648,7 +666,7 @@ program
           if (opts.json)
             printJsonError(result.kind.toUpperCase().replace(/-/g, '_'), result.message)
           else console.error(chalk.red(result.message))
-          process.exit(1)
+          process.exitCode = 1
       }
     } catch (err) {
       handleError(err, opts.json)
@@ -686,7 +704,7 @@ program
         default:
           if (opts.json) printJsonError(result.kind.toUpperCase().replace(/-/g, '_'), result.message)
           else console.error(chalk.red(result.message))
-          process.exit(1)
+          process.exitCode = 1
       }
     } catch (err) {
       handleError(err, opts.json)
@@ -725,7 +743,7 @@ program
         default:
           if (opts.json) printJsonError(result.kind.toUpperCase().replace(/-/g, '_'), result.message)
           else console.error(chalk.red(result.message))
-          process.exit(1)
+          process.exitCode = 1
       }
     } catch (err) {
       handleError(err, opts.json)
@@ -756,7 +774,7 @@ program
           if (opts.json)
             printJsonError(result.kind.toUpperCase().replace(/-/g, '_'), result.message)
           else console.error(chalk.red(result.message))
-          process.exit(1)
+          process.exitCode = 1
       }
     } catch (err) {
       handleError(err, opts.json)
@@ -765,7 +783,8 @@ program
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-function resolveProject(cliArg?: string): string {
+/** The project slug, or undefined after printing the refusal and setting exit 1; the caller returns. */
+function resolveProject(cliArg?: string): string | undefined {
   if (cliArg) return cliArg
 
   const config = readProjectConfig()
@@ -774,7 +793,8 @@ function resolveProject(cliArg?: string): string {
   console.error(chalk.red('No project specified.'))
   console.error('Use --project <slug> or create a .deploylog.yml with:')
   console.error(chalk.dim('  project: my-app'))
-  process.exit(1)
+  process.exitCode = 1
+  return undefined
 }
 
 /** JSON mode: raw data on stdout, so output pipes into jq/scripts cleanly. */
@@ -788,13 +808,15 @@ function printJsonError(code: string, message: string): void {
 }
 
 function handleError(err: unknown, json?: boolean): void {
+  process.exitCode = 1
+
   if (json) {
     if (err instanceof ApiError) {
       printJsonError(err.code, err.message)
     } else {
       printJsonError('ERROR', err instanceof Error ? err.message : 'An unknown error occurred')
     }
-    process.exit(1)
+    return
   }
 
   if (err instanceof ApiError) {
@@ -802,16 +824,15 @@ function handleError(err: unknown, json?: boolean): void {
     if (err.status === 401) {
       console.error(chalk.dim('Run `deploylog login` to authenticate.'))
     }
-    process.exit(1)
+    return
   }
 
   if (err instanceof Error) {
     console.error(chalk.red(err.message))
-    process.exit(1)
+    return
   }
 
   console.error(chalk.red('An unknown error occurred'))
-  process.exit(1)
 }
 
 program.parse()

@@ -11,7 +11,7 @@ repos; the API it calls lives in `projects/deploylog` under `src/app/api/cli/*`.
   way (a heavy dependency loads lazily inside its own subcommand, see issue 06).
 - **Build / test:** `npm run build` (tsc → `dist/`, the only thing published), `npm test`
   (`vitest run`, no config file; `src/*.test.ts` sit beside their modules and are excluded from
-  tsc). 11 files, 197 tests on 2026-09-26, green on Windows and Linux; run the suite for the real
+  tsc). 12 files, 207 tests on 2026-10-10, green on Windows; run the suite for the real
   number. No CI job runs it (the only workflow is `manual-check.yml`), so run it before a release.
 - **Siblings:** `projects/deploylog` (API + dashboard), `projects/deploylog-widget`,
   `projects/deploylog-action` (`deploylogdev/action`, its own package: it does not import this one).
@@ -54,6 +54,11 @@ issues/NN-slug.md      one file per work item (header fields, What to build, Acc
 2. **Typed refusals, not `process.exit`.** A domain function returns a `kind`-tagged union
    (`created | no-commits | missing-fields | cancelled | not-found | ...`); the adapter decides the
    message and the exit code. Adding a failure mode means adding a `kind`, and a test for it.
+   The adapter does not call `process.exit` either: it sets `process.exitCode` and returns. On
+   Windows (Node 24) `process.exit()` after a request aborts in libuv
+   (`!(handle->flags & UV_HANDLE_CLOSING)`) and the shell sees 127 instead of the code (issue 14).
+   `index.test.ts` fails on any `process.exit` in `src/`; it imports the adapter with its modules
+   mocked, since `index.ts` has no deps seam.
 3. **`--json` on every data command.** Raw JSON on stdout, `{"error":{"code","message"}}` on
    stderr, no interactive prompt, ever, when `--json` is set (README "Machine-readable output":
    built for CI and agents). A new command ships with it.
