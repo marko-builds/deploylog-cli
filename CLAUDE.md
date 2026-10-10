@@ -13,8 +13,12 @@ repos; the API it calls lives in `projects/deploylog` under `src/app/api/cli/*`.
   (`vitest run`, no config file; `src/*.test.ts` sit beside their modules and are excluded from
   tsc). 12 files, 199 tests on 2026-10-10, green on Windows and Linux; run the suite for the real
   number. `ci.yml` runs `npm ci`, `npm run build` and `npm test` on every pull request and push to
-  `main` (Node 22 on Ubuntu and Windows, Node 20 on Ubuntu); `src/ci-workflow.test.ts` fails if an
-  edit stops it running the gate on pull requests. Still run the suite locally before a release.
+  `main` (Node 22 on Ubuntu and Windows, Node 20 on Ubuntu). `src/ci-workflow.test.ts` fails if the
+  `pull_request` trigger is removed or narrowed (branches, paths, activity types), push to `main` is
+  dropped, a gate step is removed or reordered, or a job or gate step gets an `if` or
+  `continue-on-error`. Rely on it in a local `npm test`: a pull request that edits `ci.yml` runs its
+  edited copy, so that pull request's own checks cannot be relied on to catch the edit. Still run
+  the suite locally before a release.
 - **Siblings:** `projects/deploylog` (API + dashboard), `projects/deploylog-widget`,
   `projects/deploylog-action` (`deploylogdev/action`, its own package: it does not import this one).
 

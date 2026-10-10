@@ -1,8 +1,11 @@
 # Runs this repo's gate (npm ci, npm run build, npm test; see CLAUDE.md) on every pull
 # request and on every push to main, so a green check on a CLI pull request means the suite
 # ran. manual-check.yml verifies the Manual's claims and runs no tests.
-# src/ci-workflow.test.ts fails if an edit stops this workflow running the gate on pull
-# requests.
+# src/ci-workflow.test.ts fails if the pull_request trigger is removed or narrowed (branches,
+# paths, activity types), push to main is dropped, a gate step is removed or reordered, or a
+# job or gate step gets an `if` or `continue-on-error`. Rely on it in a local `npm test`: a pull
+# request that edits this file runs the edited copy, so its own checks cannot be relied on to
+# catch the edit.
 #
 # Matrix, a default taken 2026-10-10 and not yet confirmed: Node 22 on Ubuntu and on
 # Windows (the suite is run on both), plus Node 20 on Ubuntu, the oldest Node the test
