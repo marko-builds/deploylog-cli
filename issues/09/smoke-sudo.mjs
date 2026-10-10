@@ -133,7 +133,7 @@ check(
 r = await run([CLI, 'logout'], sudoEnv)
 check(
   '6 SUDO_USER set: logout refused, exit 1, key kept',
-  r.code === 1 && r.stderr.includes('Refusing to run `deploylog logout` under sudo') && readStore().apiKey === 'dk_smoke',
+  r.code === 1 && r.stderr.includes('Refusing to run `deploylog logout` under sudo') && !r.stdout.includes('Logged out') && readStore().apiKey === 'dk_smoke',
   JSON.stringify({ ...r, store: readStore() }),
 )
 

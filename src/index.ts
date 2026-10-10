@@ -52,7 +52,8 @@ program
     const result = await runLogin(opts)
     if (result.kind !== 'saved') {
       console.error(chalk.red(result.message))
-      process.exit(1)
+      process.exitCode = 1
+      return
     }
     console.log(chalk.green('Authenticated successfully.'))
     console.log(chalk.dim(`Config saved to ${result.configPath}`))
@@ -67,7 +68,8 @@ program
     const result = runLogout()
     if (result.kind !== 'cleared') {
       console.error(chalk.red(result.message))
-      process.exit(1)
+      process.exitCode = 1
+      return
     }
     console.log(chalk.green('Logged out. Credentials removed.'))
   })
