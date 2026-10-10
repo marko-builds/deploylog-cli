@@ -1,6 +1,6 @@
 # 09 — Refuse credential/global commands under sudo
 
-**Status:** built 2026-10-10 on branch `feat/09-refuse-login-under-sudo`, unmerged and unreleased · **Type:** AFK · **Lane:** deploylog-cli
+**Status:** in review as PR #20 (2026-10-10), branch `feat/09-refuse-login-under-sudo`, unmerged and unreleased · **Type:** AFK · **Lane:** deploylog-cli
 **Parent:** none — mined from the pnpm 12.0 release notes (`references/transcripts/145.txt`)
 **Blocked by:** None
 **Verification:** unit tests over an injected `isSudo`/env seam (no real sudo in the harness, and none is available from the agent sandbox anyway). Signal: `vitest run`.
