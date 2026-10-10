@@ -11,8 +11,8 @@ repos; the API it calls lives in `projects/deploylog` under `src/app/api/cli/*`.
   way (a heavy dependency loads lazily inside its own subcommand, see issue 06).
 - **Build / test:** `npm run build` (tsc → `dist/`, the only thing published), `npm test`
   (`vitest run`, no config file; `src/*.test.ts` sit beside their modules and are excluded from
-  tsc). 12 files, 199 tests on 2026-10-10, green on Windows and Linux; run the suite for the real
-  number. `ci.yml` runs `npm ci`, `npm run build` and `npm test` on every pull request and push to
+  tsc). 12 files, 200 tests on 2026-10-10, green on Windows (Node 24); the Ubuntu jobs in `ci.yml`
+  are the Linux check, not yet run. Run the suite for the real number. `ci.yml` runs `npm ci`, `npm run build` and `npm test` on every pull request and push to
   `main` (Node 22 on Ubuntu and Windows, Node 20 on Ubuntu). `src/ci-workflow.test.ts` fails if the
   `pull_request` trigger is removed or narrowed (branches, paths, activity types), push to `main` is
   dropped, a gate step is removed or reordered, or a job or gate step gets an `if` or
