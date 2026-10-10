@@ -21,7 +21,7 @@
 ## Acceptance
 
 - [x] `package.json` and `package-lock.json` (its root `version` and `packages[""].version`) say `0.7.1`.
-- [x] The built CLI prints `0.7.1` for `--version` (`src/version.test.ts` ties the printed version to `package.json`).
+- [x] The built CLI prints `0.7.1` for `--version`. `src/index.ts` passes `getCliVersion()` to Commander, and `src/version.test.ts` ties that to `package.json`: with `getCliVersion` planted to return `'0.7.0'`, 2 of its 3 tests failed (`expected '0.7.0' to be '0.7.1'`); restored, the file matched `HEAD` byte for byte.
 - [x] The `Status:` lines of issues 09, 13 and 14 name their merge sha and 0.7.1.
 - [x] Release notes name #19, #20 and #21: here, in the bump commit's body and in the pull request body.
 - [x] `npm ci`, `npm run build` and `npm test` pass.
