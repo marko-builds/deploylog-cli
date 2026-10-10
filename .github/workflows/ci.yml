@@ -7,10 +7,12 @@
 # request that edits this file runs the edited copy, so its own checks cannot be relied on to
 # catch the edit.
 #
-# Matrix, a default taken 2026-10-10 and not yet confirmed: Node 22 on Ubuntu and on
-# Windows (the suite is run on both), plus Node 20 on Ubuntu, the oldest Node the test
-# toolchain installs on (vite 8, under vitest 4, needs ^20.19.0 or >=22.12.0). The README
-# says Node 18+, which no job here can test.
+# All seven defaults taken 2026-10-10 and not yet confirmed (fail-fast, permissions, npm cache,
+# no concurrency or paths filter, the guard's place and scope) are in issues/13-ci-workflow.md.
+# Matrix, the first of them: Node 22 on Ubuntu and on Windows (the suite is run on both),
+# plus Node 20 on Ubuntu, the oldest Node the test toolchain installs on (vite 8, under
+# vitest 4, needs ^20.19.0 or >=22.12.0). The README says Node 18+, which no job here can
+# test.
 name: CI
 on:
   push:
