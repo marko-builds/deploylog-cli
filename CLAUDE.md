@@ -11,8 +11,14 @@ repos; the API it calls lives in `projects/deploylog` under `src/app/api/cli/*`.
   way (a heavy dependency loads lazily inside its own subcommand, see issue 06).
 - **Build / test:** `npm run build` (tsc → `dist/`, the only thing published), `npm test`
   (`vitest run`, no config file; `src/*.test.ts` sit beside their modules and are excluded from
-  tsc). 12 files, 207 tests on 2026-10-10, green on Windows; run the suite for the real
-  number. No CI job runs it (the only workflow is `manual-check.yml`), so run it before a release.
+  tsc). 14 files, 230 tests on 2026-10-10, green on Windows (Node 24); the Ubuntu jobs in `ci.yml`
+  are the Linux check. Run the suite for the real number. `ci.yml` runs `npm ci`, `npm run build` and `npm test` on every pull request and push to
+  `main` (Node 22 on Ubuntu and Windows, Node 20 on Ubuntu). `src/ci-workflow.test.ts` fails if the
+  `pull_request` trigger is removed or narrowed (branches, paths, activity types), push to `main` is
+  dropped, a gate step is removed or reordered, or a job or gate step gets an `if` or
+  `continue-on-error`. Rely on it in a local `npm test`: a pull request that edits `ci.yml` runs its
+  edited copy, so that pull request's own checks cannot be relied on to catch the edit. Still run
+  the suite locally before a release.
 - **Siblings:** `projects/deploylog` (API + dashboard), `projects/deploylog-widget`,
   `projects/deploylog-action` (`deploylogdev/action`, its own package: it does not import this one).
 
@@ -28,6 +34,7 @@ src/
   push.ts              runPush(opts, deps): entry from flags / git / AI summary → draft or publish
   entry-commands.ts    runSetPublished / runView / runEdit / runDelete (EntryCommandDeps)
   init.ts, open.ts     runInit (.deploylog.yml), runOpen (browser)
+  login.ts             runLogin / runLogout: the credential writes; refused under sudo (SUDO_USER set), issue 09
   manual.ts            runManualExport: the manual payload as JSON (`./<slug>-manual.json`, or `-`)
   manual-verify.ts     runManualVerify: claims vs the pushed commit; decideVerdict, renderReport
   manual-schema.ts, manual-verify-schema.ts   zod: the manual contract shared with the server
@@ -41,6 +48,7 @@ src/
 docs/manual/05-cli.md  chapter 05 (The CLI) as the Manual pushes it here on a `deploylog/chapter-<id>` PR; never hand-edited
 issues/NN-slug.md      one file per work item (header fields, What to build, Acceptance, Boundaries)
 .github/workflows/manual-check.yml   the Action in verify mode on every pull request
+.github/workflows/ci.yml             the gate (npm ci, build, test) on every pull request and push to main
 ```
 
 ## Conventions (the ones that are load-bearing)
